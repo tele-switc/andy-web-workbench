@@ -7,5 +7,6 @@ server/data/*.db-wal
 server/data/.auth-secret
 server/data/backups/
 *.log
+logs/
 .DS_Store
 Thumbs.db
