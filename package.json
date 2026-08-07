@@ -1,0 +1,14 @@
+{
+  "name": "andy-web-workbench",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Andy英语学习规划师工作台 — Kimi风格UI + AI助手",
+  "scripts": {
+    "server": "node server/src/index.js",
+    "server:dev": "node --watch server/src/index.js",
+    "client": "cd client && npx vite --host",
+    "client:build": "cd client && npx vite build",
+    "setup": "cd server && npm install && cd ../client && npm install",
+    "tunnel": "powershell -ExecutionPolicy Bypass -File tunnel-setup.ps1"
+  }
+}

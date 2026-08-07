@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6FA">
+<title>Andy英语学习规划师的工作台</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --primary: #4C6FFF;
+    --primary-light: #EEF2FF;
+    --bg: #F5F6FA;
+    --card: #FFFFFF;
+    --text: #1A1D26;
+    --sub: #8A8F9E;
+    --light: #B6BAC6;
+    --danger: #F04438;
+    --success: #22C55E;
+    --warning: #F59E0B;
+    --border: #ECEEF3;
+    --radius: 16px;
+  }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  #app { max-width: 560px; margin: 0 auto; padding: 0 14px 78px; }
+
+  /* 顶部 */
+  .page-head { padding: 20px 4px 14px; }
+  .page-title { font-size: 22px; font-weight: 700; }
+  .page-sub { font-size: 13px; color: var(--sub); margin-top: 4px; }
+
+  /* 卡片 */
+  .card { background: var(--card); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+  .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+  .card-title .link { font-size: 12px; color: var(--sub); font-weight: 400; }
+  .card-title .act { font-size: 13px; color: var(--primary); font-weight: 400; }
+
+  /* 数据概览 */
+  .stats { display: flex; text-align: center; }
+  .stats .stat { flex: 1; }
+  .stats .num { font-size: 20px; font-weight: 700; }
+  .stats .lab { font-size: 11px; color: var(--sub); margin-top: 2px; }
+
+  /* 快捷入口 */
+  .entries { display: flex; flex-wrap: wrap; gap: 12px; }
+  .entry {
+    flex: 1 1 calc(50% - 6px); min-width: 0;
+    background: var(--card); border-radius: var(--radius); padding: 14px;
+    cursor: pointer; display: flex; align-items: center; gap: 10px;
+  }
+  .entry .icon { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex: none; }
+  .entry .t { font-size: 15px; font-weight: 600; }
+  .entry .d { font-size: 11px; color: var(--sub); margin-top: 2px; }
+
+  /* 提醒行 */
+  .rem-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .rem-row:last-child { border-bottom: none; }
+  .rem-row .body { flex: 1; min-width: 0; }
+  .rem-row .t { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .rem-row .s { font-size: 12px; color: var(--sub); margin-top: 2px; }
+  .tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; flex: none; }
+  .tag.overdue { color: var(--danger); background: #FDEBEA; }
+  .tag.today { color: var(--primary); background: var(--primary-light); }
+  .rem-row .go { font-size: 12px; color: var(--primary); flex: none; }
+
+  /* 搜索框 */
+  .search {
+    width: 100%; height: 42px; border: none; outline: none; background: #fff;
+    border-radius: 21px; padding: 0 16px; font-size: 14px; color: var(--text);
+  }
+  .search::placeholder { color: var(--light); }
+
+  /* 列表行 */
+  .item-row {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--card); border-radius: var(--radius); padding: 13px;
+    margin-bottom: 10px; cursor: pointer;
+  }
+  .avatar {
+    width: 44px; height: 44px; border-radius: 50%; background: var(--primary);
+    color: #fff; font-size: 17px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; flex: none;
+  }
+  .item-row .body { flex: 1; min-width: 0; }
+  .item-row .n { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .item-row .meta { font-size: 12px; color: var(--sub); margin-top: 2px; }
+  .badge { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--danger); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none; }
+  .chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; flex: none; }
+
+  /* 按钮 */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    border: none; border-radius: 22px; padding: 0 22px; height: 44px;
+    font-size: 14px; cursor: pointer;
+  }
+  .btn.primary { background: var(--primary); color: #fff; }
+  .btn.ghost { background: var(--primary-light); color: var(--primary); }
+  .btn.danger-text { background: none; color: var(--danger); font-size: 13px; padding: 0; height: auto; }
+  .btn.full { width: 100%; }
+
+  /* 表单 */
+  .form-item { margin-bottom: 14px; }
+  .form-item .lab { font-size: 13px; color: var(--sub); margin-bottom: 6px; }
+  .form-item input[type="text"], .form-item input[type="tel"], .form-item input[type="date"], .form-item textarea, .form-item select {
+    width: 100%; border: none; outline: none; background: #F5F7FB;
+    border-radius: 12px; padding: 12px 14px; font-size: 15px; color: var(--text);
+    font-family: inherit;
+  }
+  .form-item textarea { min-height: 84px; resize: vertical; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips .c {
+    padding: 7px 14px; border-radius: 16px; background: #F1F3F8; color: var(--text);
+    font-size: 13px; cursor: pointer; border: none;
+  }
+  .chips .c.on { background: var(--primary); color: #fff; }
+
+  /* 详情 */
+  .detail-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; }
+  .detail-row .k { font-size: 13px; color: var(--sub); flex: none; }
+  .detail-row .v { font-size: 14px; text-align: right; word-break: break-all; }
+
+  /* 底部导航 */
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    background: #fff; border-top: 1px solid var(--border);
+    display: flex; padding-bottom: env(safe-area-inset-bottom);
+    max-width: 560px; margin: 0 auto;
+  }
+  .tab {
+    flex: 1; height: 56px; background: none; border: none; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    color: #9095A3;
+  }
+  .tab svg { width: 22px; height: 22px; fill: currentColor; }
+  .tab span { font-size: 10px; }
+  .tab.active { color: var(--primary); }
+
+  /* 分段控件 */
+  .seg { display: flex; background: #fff; border-radius: 20px; padding: 3px; }
+  .seg button {
+    flex: 1; border: none; background: none; padding: 7px 0; border-radius: 17px;
+    font-size: 14px; color: var(--sub); cursor: pointer;
+  }
+  .seg button.on { background: var(--primary); color: #fff; }
+
+  /* 空状态 */
+  .empty { text-align: center; color: var(--sub); font-size: 13px; padding: 48px 0; }
+  .empty .big { font-size: 34px; margin-bottom: 8px; }
+
+  /* 弹窗 */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(15, 17, 26, 0.45); z-index: 100;
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .sheet {
+    background: #fff; width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto;
+    border-radius: 20px 20px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
+  }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .sheet-head .tt { font-size: 17px; font-weight: 600; }
+  .sheet-head .x { border: none; background: none; font-size: 22px; color: var(--sub); cursor: pointer; padding: 0 4px; }
+  .sheet-actions { display: flex; gap: 10px; margin-top: 6px; }
+  .sheet-actions .btn { flex: 1; }
+  .dialog {
+    background: #fff; width: 82%; max-width: 320px; border-radius: 18px; padding: 22px;
+    text-align: center;
+  }
+  .dialog .tt { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+  .dialog .msg { font-size: 13px; color: var(--sub); margin-bottom: 18px; }
+  .dialog .btns { display: flex; gap: 10px; }
+  .dialog .btns button { flex: 1; border: none; border-radius: 20px; height: 40px; font-size: 14px; cursor: pointer; }
+  .dialog .btns .cancel { background: #F1F3F8; color: var(--text); }
+  .dialog .btns .ok { background: var(--primary); color: #fff; }
+  .dialog .btns .ok.danger { background: var(--danger); }
+
+  /* toast */
+  .toast {
+    position: fixed; top: 40px; left: 50%; transform: translateX(-50%);
+    background: rgba(20, 22, 30, 0.88); color: #fff; font-size: 13px;
+    padding: 9px 18px; border-radius: 20px; z-index: 200; max-width: 80%;
+    text-align: center; transition: opacity .25s; pointer-events: none;
+  }
+
+  /* 时间线 */
+  .tl-item { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .tl-item:last-child { border-bottom: none; }
+  .tl-item .dot { width: 24px; height: 24px; border-radius: 12px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; margin-top: 2px; }
+  .tl-item .body { flex: 1; min-width: 0; }
+  .tl-item .t { font-size: 14px; font-weight: 600; }
+  .tl-item .s { font-size: 12px; color: var(--sub); margin-top: 2px; }
+  .divider { height: 1px; background: var(--border); margin: 8px 0; }
+
+  .back-bar { display: flex; align-items: center; gap: 4px; padding: 10px 2px; }
+  .back-bar .back { border: none; background: none; font-size: 22px; color: var(--text); cursor: pointer; padding: 0 6px; }
+  .back-bar .tt { font-size: 17px; font-weight: 600; flex: 1; }
+  .back-bar .act { border: none; background: none; font-size: 15px; color: var(--primary); cursor: pointer; padding: 0 8px; }
+
+  .group-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+  <div id="app"></div>
+  <nav class="tabbar" id="tabbar">
+    <button class="tab active" data-view="home">
+      <svg viewBox="0 0 24 24"><path d="M4 10.4 L12 4 L20 10.4 V20 H14.8 V14.4 H9.2 V20 H4 Z"/></svg>
+      <span>首页</span>
+    </button>
+    <button class="tab" data-view="students">
+      <svg viewBox="0 0 24 24"><path d="M12 11.6c-1.9 0-3.4-1.5-3.4-3.4S10.1 4.8 12 4.8s3.4 1.5 3.4 3.4-1.5 3.4-3.4 3.4Z"/><path d="M5.9 18.8c.9-3.1 3.3-4.9 6.1-4.9s5.2 1.8 6.1 4.9c.2.7-.3 1.4-1 1.4H6.9c-.7 0-1.2-.7-1-1.4Z"/></svg>
+      <span>学员</span>
+    </button>
+    <button class="tab" data-view="leads">
+      <svg viewBox="0 0 24 24"><path d="M9.2 11.2c-1.6 0-2.8-1.3-2.8-2.8s1.3-2.8 2.8-2.8 2.8 1.3 2.8 2.8-1.3 2.8-2.8 2.8Z"/><path d="M4.9 18c.7-2.5 2.2-3.9 4.3-3.9s3.6 1.4 4.3 3.9c.2.5-.2 1.1-.8 1.1H5.7c-.6 0-1-.6-.8-1.1Z"/><path d="M15.8 9.6h2.4V12h2.4v2.4h-2.4v2.4h-2.4v-2.4h-2.4V12h2.4Z"/></svg>
+      <span>意向</span>
+    </button>
+    <button class="tab" data-view="reminders">
+      <svg viewBox="0 0 24 24"><path d="M12 3.4a5.8 5.8 0 0 0-5.8 5.8v2.8l-1.5 2.8c-.4.7.1 1.6.9 1.6h12.8c.8 0 1.3-.9.9-1.6l-1.5-2.8V9.2A5.8 5.8 0 0 0 12 3.4Z"/><path d="M9.6 18.6a2.4 2.4 0 0 0 4.8 0Z"/></svg>
+      <span>提醒</span>
+    </button>
+  </nav>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+  <script src="app.js"></script>
+</body>
+</html>
