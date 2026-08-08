@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as api from '../api';
 
+const AI_STATUS_LABELS = {
+  ok: { text: 'AI 已连接', color: 'var(--success)' },
+  invalid_key: { text: 'AI Key 无效', color: 'var(--danger)' },
+  not_configured: { text: 'AI 未配置', color: 'var(--text-tertiary)' },
+  unreachable: { text: 'AI 服务不可达', color: 'var(--warning)' },
+  error: { text: 'AI 服务错误', color: 'var(--warning)' },
+  unknown: { text: 'AI 状态检测中', color: 'var(--text-tertiary)' },
+};
+
 export default function AiPanel({ onClose, data }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -8,7 +17,17 @@ export default function AiPanel({ onClose, data }) {
   const [loading, setLoading] = useState(false);
   const [sugLoading, setSugLoading] = useState(true);
   const [chatMode, setChatMode] = useState(false);
+  const [aiStatus, setAiStatus] = useState({ status: 'unknown', detail: '' });
   const messagesEnd = useRef(null);
+
+  // Check AI connectivity
+  useEffect(() => {
+    let cancelled = false;
+    api.getAiStatus().then(s => {
+      if (!cancelled) setAiStatus(s);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Load initial suggestions
   useEffect(() => {
@@ -129,10 +148,15 @@ export default function AiPanel({ onClose, data }) {
     <div className="ai-panel">
       <div className="ai-panel-header">
         <div className="tt">
-          <span className="dot" />
+          <span className="dot" style={{ background: (AI_STATUS_LABELS[aiStatus.status] || AI_STATUS_LABELS.unknown).color }} />
           小K · AI 助手
         </div>
-        <button className="sheet-close" onClick={onClose}>✕</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11, color: (AI_STATUS_LABELS[aiStatus.status] || AI_STATUS_LABELS.unknown).color }}>
+            {(AI_STATUS_LABELS[aiStatus.status] || AI_STATUS_LABELS.unknown).text}
+          </span>
+          <button className="sheet-close" onClick={onClose}>✕</button>
+        </div>
       </div>
 
       {/* Suggestions (when not in chat mode) */}

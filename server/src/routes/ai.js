@@ -5,8 +5,43 @@ const router = Router();
 
 // Module-level AI API config
 const AI_API_KEY = process.env.AI_API_KEY || '';
-const AI_API_BASE = process.env.AI_API_BASE || 'https://api.agnes.ai/v1';
+const AI_API_BASE = process.env.AI_API_BASE || 'https://api.agnes-ai.com/api/v1';
 const AI_MODEL = process.env.AI_MODEL || 'gpt-4o';
+
+// Cache the last AI connectivity status (checked on demand)
+let aiStatusCache = { checked: 0, status: 'unknown', detail: '' };
+
+// Check whether the external AI is actually reachable & authenticated.
+// Uses a cheap /models request. Results cached for 60s.
+async function checkAiStatus(force = false) {
+  const now = Date.now();
+  if (!force && aiStatusCache.checked && now - aiStatusCache.checked < 60000) {
+    return aiStatusCache;
+  }
+  if (!AI_API_KEY) {
+    aiStatusCache = { checked: now, status: 'not_configured', detail: '未配置 AI_API_KEY' };
+    return aiStatusCache;
+  }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(`${AI_API_BASE}/models`, {
+      headers: { 'Authorization': `Bearer ${AI_API_KEY}` },
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      aiStatusCache = { checked: now, status: 'ok', detail: 'AI 服务可用' };
+    } else if (res.status === 401) {
+      aiStatusCache = { checked: now, status: 'invalid_key', detail: 'API Key 无效或已过期' };
+    } else {
+      aiStatusCache = { checked: now, status: 'error', detail: `HTTP ${res.status}` };
+    }
+  } catch (err) {
+    aiStatusCache = { checked: now, status: 'unreachable', detail: err.name === 'AbortError' ? '连接超时' : err.message };
+  }
+  return aiStatusCache;
+}
 
 // Milestone definitions (shared with reminders)
 const STUDENT_MILESTONES = [
@@ -251,7 +286,10 @@ router.post('/chat', async (req, res) => {
     });
   }
 
+  let timer;
   try {
+    const controller = new AbortController();
+    timer = setTimeout(() => controller.abort(), 30000);
     const response = await fetch(`${AI_API_BASE}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -272,20 +310,50 @@ router.post('/chat', async (req, res) => {
         ],
         temperature: 0.7,
         max_tokens: 800
-      })
+      }),
+      signal: controller.signal
     });
+    clearTimeout(timer);
+
+    // Non-2xx: surface the AI provider error
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      let detail = `AI 服务返回错误 (HTTP ${response.status})`;
+      if (response.status === 401) {
+        detail = 'AI API Key 无效或已过期，请在 agnes-ai.com 重新生成';
+      } else if (errText) {
+        try {
+          const e = JSON.parse(errText);
+          if (e.message) detail = e.message;
+          if (e.error?.message) detail = e.error.message;
+        } catch {}
+      }
+      aiStatusCache = { checked: Date.now(), status: response.status === 401 ? 'invalid_key' : 'error', detail };
+      console.error(`AI chat HTTP ${response.status}: ${errText.slice(0, 200)}`);
+      return res.json({
+        success: true,
+        data: {
+          reply: detail + '。已切换本地模式，您的数据是安全的。当前共 ' + students.length + ' 位学员，' + leads.length + ' 位意向。',
+          local: true,
+          error: detail
+        }
+      });
+    }
 
     const result = await response.json();
     const reply = result.choices?.[0]?.message?.content || '抱歉，我现在无法回答，请稍后再试。';
     res.json({ success: true, data: { reply, local: false } });
   } catch (err) {
-    console.error('AI chat error:', err.message);
+    clearTimeout(timer);
+    const detail = err.name === 'AbortError' ? 'AI 服务响应超时' : err.message;
+    aiStatusCache = { checked: Date.now(), status: 'unreachable', detail };
+    console.error('AI chat error:', detail);
     res.json({
       success: true,
       data: {
-        reply: 'AI 服务暂时不可用，但您的数据是安全的。当前共 ' + students.length + ' 位学员，' + leads.length + ' 位意向。',
+        reply: detail + '。已切换本地模式，您的数据是安全的。当前共 ' + students.length + ' 位学员，' + leads.length + ' 位意向。',
         local: true,
-        error: err.message
+        error: detail
       }
     });
   }
@@ -352,6 +420,21 @@ router.get('/analytics', (req, res) => {
       sourceDistribution: sourceDist,
       monthlyNewStudents: monthlyStudents,
       recordFrequency: recordFreq
+    }
+  });
+});
+
+// GET /api/ai/status — AI connectivity status (for the frontend indicator)
+router.get('/status', async (req, res) => {
+  const force = req.query.force === '1';
+  const status = await checkAiStatus(force);
+  res.json({
+    success: true,
+    data: {
+      configured: !!AI_API_KEY,
+      model: AI_MODEL,
+      base: AI_API_BASE.replace(/^https?:\/\//, ''),
+      ...status,
     }
   });
 });

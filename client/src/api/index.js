@@ -295,6 +295,9 @@ export async function aiChat(message) {
 export async function getAnalytics() {
   return apiFetch('/ai/analytics');
 }
+export async function getAiStatus() {
+  return apiFetch('/ai/status');
+}
 
 // ---- Health ----
 export async function getHealth() {
