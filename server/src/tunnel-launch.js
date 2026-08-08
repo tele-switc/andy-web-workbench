@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
 const LOGS = path.join(ROOT, 'logs');
+if (!fs.existsSync(LOGS)) fs.mkdirSync(LOGS, { recursive: true });
 const URL_FILE = path.join(LOGS, 'current-tunnel-url.txt');
 const TUNNEL_LOG = path.join(LOGS, 'tunnel.log');
 
