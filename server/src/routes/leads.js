@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as db from '../db/index.js';
+import { broadcastChange } from '../ws/index.js';
 
 const router = Router();
 
@@ -43,6 +44,7 @@ router.post('/', (req, res) => {
   db.logOperation('create', 'lead', data.id, { wechatNickname });
   const result = { success: true, data: lead };
   if (operation_id) db.saveIdempotency(operation_id, result);
+  broadcastChange('lead', 'create', lead);
   res.status(201).json(result);
 });
 
@@ -51,6 +53,7 @@ router.put('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ success: false, error: '意向学员不存在' });
   const lead = db.updateLead(req.params.id, req.body);
   db.logOperation('update', 'lead', req.params.id, { wechatNickname: req.body.wechatNickname });
+  broadcastChange('lead', 'update', lead);
   res.json({ success: true, data: lead });
 });
 
@@ -59,6 +62,7 @@ router.delete('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ success: false, error: '意向学员不存在' });
   db.deleteLead(req.params.id);
   db.logOperation('delete', 'lead', req.params.id, { wechatNickname: existing.wechatNickname });
+  broadcastChange('lead', 'delete', { id: req.params.id });
   res.json({ success: true });
 });
 
@@ -84,8 +88,10 @@ router.post('/:id/convert', (req, res) => {
     updateTime: now
   };
   const student = db.createStudent(studentData);
-  db.updateLead(req.params.id, { followStatus: '已成交', updateTime: now });
+  db.updateLead(req.params.id, { followStatus: '已转正式', updateTime: now });
   db.logOperation('convert', 'lead', l.id, { studentId: studentData.id });
+  broadcastChange('student', 'create', student);
+  broadcastChange('lead', 'update', db.getLead(req.params.id));
   res.status(201).json({ success: true, data: { student, lead: db.getLead(req.params.id) } });
 });
 

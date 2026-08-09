@@ -10,14 +10,23 @@ import Leads from './pages/Leads';
 import LeadDetail from './pages/LeadDetail';
 import Reminders from './pages/Reminders';
 import Archives from './pages/Archives';
+import More from './pages/More';
 import AiPanel from './components/AiPanel';
 import Toast from './components/Toast';
 
 const ICONS = {
-  home: <svg viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>,
-  students: <svg viewBox="0 0 24 24"><path d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"/></svg>,
-  leads: <svg viewBox="0 0 24 24"><path d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>,
-  reminders: <svg viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>,
+  home: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10.5L12 3l9 7.5V20a1 1 0 01-1 1h-5v-6h-6v6H4a1 1 0 01-1-1v-9.5z"/></svg>,
+  students: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M5 11v5c0 1.5 3 3 7 3s7-1.5 7-3v-5"/><path d="M21 8v5"/></svg>,
+  leads: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 11a4 4 0 11-8 0 4 4 0 018 0z"/><path d="M3 20a6 6 0 0112 0v1H3v-1z"/><path d="M19 6v4M21 8h-4"/></svg>,
+  reminders: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="9"/></svg>,
+  more: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>,
+};
+
+const STATUS_TEXT = {
+  connected: '已同步',
+  syncing: '同步中',
+  offline: '离线',
+  'host-offline': '主机离线',
 };
 
 export default function App() {
@@ -26,34 +35,39 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const [aiOpen, setAiOpen] = useState(false);
   const [reminderCount, setReminderCount] = useState(0);
-  const [syncStatus, setSyncStatus] = useState('connecting'); // connected, offline, syncing
+  const [syncStatus, setSyncStatus] = useState('connecting');
+  const [hostOnline, setHostOnline] = useState(() => api.getHostOnline());
+  const [netOnline, setNetOnline] = useState(navigator.onLine !== false);
   const [data, setData] = useState({ students: [], leads: [], records: [] });
   const [loading, setLoading] = useState(true);
   const [loggedIn, setLoggedIn] = useState(() => api.isLoggedIn());
   const [showLogin, setShowLogin] = useState(!api.isLoggedIn());
   const toastId = useRef(0);
 
-  // Register toast handler
+  // Toast handler
   useEffect(() => {
-    api.setToastHandler((msg) => {
+    api.setToastHandler((msg, type) => {
       const id = ++toastId.current;
-      setToasts(prev => [...prev, { id, msg }]);
+      setToasts(prev => [...prev, { id, text: msg, type }]);
       setTimeout(() => {
         setToasts(prev => prev.filter(t => t.id !== id));
-      }, 2000);
+      }, 2600);
     });
   }, []);
 
-  // Listen for auth changes
+  // Network + host online tracking
   useEffect(() => {
-    return api.onAuthChange((state) => {
-      setLoggedIn(state);
-      setShowLogin(!state);
-      if (state) loadData();
-    });
-  }, [loadData]);
+    const on = () => setNetOnline(true);
+    const off = () => setNetOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
 
-  // Load data from server (with IndexedDB fallback)
+  // Load data
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -61,19 +75,17 @@ export default function App() {
         api.getStudents(),
         api.getLeads(),
         api.getRecords(),
-        api.getReminderStats().catch(() => ({ total: 0 }))
+        api.getReminderStats().catch(() => ({ total: 0 })),
       ]);
       const newData = { students, leads, records };
       setData(newData);
       setReminderCount(stats.total || 0);
       setSyncStatus('connected');
-      // Cache to IndexedDB
       await idb.saveLocalData(newData);
       await idb.setLastSyncTime(Date.now());
     } catch (err) {
       console.warn('服务器连接失败，使用离线缓存:', err.message);
       setSyncStatus('offline');
-      // Try IndexedDB
       const local = await idb.getLocalData();
       if (local.students.length || local.leads.length || local.records.length) {
         setData(local);
@@ -84,29 +96,53 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  // WebSocket
-  useEffect(() => {
-    const unsub = api.connectWebSocket({
-      onSync: (data) => {
-        setData(data);
-        idb.saveLocalData(data);
-        setSyncStatus('connected');
-      },
-      onChange: (msg) => {
-        loadData();
-      },
-      onStatus: (connected) => {
-        setSyncStatus(connected ? 'connected' : 'offline');
-        if (connected) loadData();
+    const unsub = api.onHostStatus((online) => {
+      setHostOnline(online);
+      if (online) {
+        // 主机恢复：刷新数据 + 处理离线队列
+        api.processOfflineQueue().finally(() => loadData());
       }
     });
     return unsub;
   }, [loadData]);
 
-  // Navigate
+  // Periodic host health check (detect host recovery while phone stays online)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      api.checkHostHealth().then(ok => {
+        if (ok) api.processOfflineQueue().catch(() => {});
+      });
+    }, 20000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Auth changes
+  useEffect(() => {
+    return api.onAuthChange((state) => {
+      setLoggedIn(state);
+      setShowLogin(!state);
+      if (state) loadData();
+    });
+  }, [loadData]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // WebSocket
+  useEffect(() => {
+    const unsub = api.connectWebSocket({
+      onSync: (syncData) => {
+        setData(syncData);
+        idb.saveLocalData(syncData);
+        setSyncStatus('connected');
+      },
+      onChange: () => loadData(),
+      onStatus: (connected) => {
+        if (connected) { setSyncStatus('connected'); loadData(); }
+      },
+    });
+    return unsub;
+  }, [loadData]);
+
   const navigate = useCallback((v, p = {}) => {
     setView(v);
     setParams(p);
@@ -116,106 +152,136 @@ export default function App() {
   const refreshData = useCallback(async () => {
     setSyncStatus('syncing');
     await loadData();
+    setSyncStatus(api.getHostOnline() ? 'connected' : 'offline');
   }, [loadData]);
+
+  // Derived connection status
+  const status = !netOnline ? 'offline' : !hostOnline ? 'host-offline' : syncStatus === 'syncing' ? 'syncing' : 'connected';
 
   const tabs = [
     { key: 'home', label: '首页', icon: ICONS.home },
     { key: 'students', label: '学员', icon: ICONS.students },
     { key: 'leads', label: '意向', icon: ICONS.leads },
     { key: 'reminders', label: '提醒', icon: ICONS.reminders },
+    { key: 'more', label: '更多', icon: ICONS.more },
   ];
 
   return (
-    <div className="app-shell">
-      {/* Login Screen */}
+    <div className="app">
       {showLogin ? (
         <LoginScreen onSuccess={() => { setShowLogin(false); setLoggedIn(true); loadData(); }} />
       ) : (
         <>
-      {/* Header */}
-      {view === 'home' ? (
-        <header className={`app-header`}>
-          <div className="header-inner">
-            <div>
-              <div className="header-title">Andy 工作台</div>
-              <div className="header-sub">
-                {new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
-                {' · '}{['日','一','二','三','四','五','六'][new Date().getDay()]}
+          <header className="header">
+            <div className="header-inner">
+              <div>
+                <div className="header-title">Andy 工作台</div>
+                <div className="header-sub">
+                  {new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
+                  {' · '}{['日','一','二','三','四','五','六'][new Date().getDay()]}
+                </div>
+              </div>
+              <div className="header-actions">
+                <span className={`status-pill ${status}`}>
+                  <span className="dot" />
+                  {STATUS_TEXT[status] || '连接中'}
+                </span>
               </div>
             </div>
-            <div className="header-actions">
-              <span className={`sync-status ${syncStatus}`}>
-                <span className="dot" />
-                {syncStatus === 'connected' ? '已同步' : syncStatus === 'syncing' ? '同步中' : '离线'}
-              </span>
+          </header>
+
+          {(status === 'host-offline' || status === 'offline' || status === 'syncing') && (
+            <div className={`banner ${status}`}>
+              {status === 'host-offline' && (
+                <>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1l22 22M16.7 16.7A11 11 0 0012 3a11 11 0 00-6.3 2M12 21a2 2 0 100-4 2 2 0 000 4z"/><path d="M8 11a4 4 0 014-4M4 14a8 8 0 004.5-2.5"/></svg>
+                  <span>主机当前离线，操作会暂存在本机，主机恢复在线后自动同步。</span>
+                </>
+              )}
+              {status === 'offline' && (
+                <>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.55a11 11 0 015.08-2.56M8.53 16.11a6 6 0 016.95 0M12 20h.01"/><path d="M1 4l22 22"/></svg>
+                  <span>当前网络已断开，操作会暂存在本机，联网后自动同步。</span>
+                </>
+              )}
+              {status === 'syncing' && (
+                <>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6"/></svg>
+                  <span>正在与主机同步…</span>
+                </>
+              )}
             </div>
+          )}
+
+          <div className="content">
+            {loading && view !== 'home' ? (
+              <SkeletonPage />
+            ) : view === 'home' ? (
+              <Home data={data} navigate={navigate} status={status} loading={loading} />
+            ) : view === 'students' ? (
+              <Students data={data} navigate={navigate} refreshData={refreshData} />
+            ) : view === 'studentDetail' ? (
+              <StudentDetail data={data} navigate={navigate} params={params} refreshData={refreshData} />
+            ) : view === 'leads' ? (
+              <Leads data={data} navigate={navigate} refreshData={refreshData} />
+            ) : view === 'leadDetail' ? (
+              <LeadDetail data={data} navigate={navigate} params={params} refreshData={refreshData} />
+            ) : view === 'reminders' ? (
+              <Reminders data={data} navigate={navigate} refreshData={refreshData} />
+            ) : view === 'archives' ? (
+              <Archives data={data} navigate={navigate} />
+            ) : view === 'more' ? (
+              <More data={data} navigate={navigate} onOpenAi={() => setAiOpen(true)} />
+            ) : null}
           </div>
-        </header>
-      ) : null}
 
-      {/* Content */}
-      <div className="content">
-        {loading ? (
-          <div className="loading">
-            <div className="spinner" />
-            <div>加载中...</div>
-          </div>
-        ) : view === 'home' ? (
-          <Home data={data} navigate={navigate} />
-        ) : view === 'students' ? (
-          <Students data={data} navigate={navigate} refreshData={refreshData} />
-        ) : view === 'studentDetail' ? (
-          <StudentDetail data={data} navigate={navigate} params={params} refreshData={refreshData} />
-        ) : view === 'leads' ? (
-          <Leads data={data} navigate={navigate} refreshData={refreshData} />
-        ) : view === 'leadDetail' ? (
-          <LeadDetail data={data} navigate={navigate} params={params} refreshData={refreshData} />
-        ) : view === 'reminders' ? (
-          <Reminders data={data} navigate={navigate} refreshData={refreshData} />
-        ) : view === 'archives' ? (
-          <Archives data={data} navigate={navigate} />
-        ) : null}
-      </div>
+          {!['studentDetail', 'leadDetail', 'archives'].includes(view) && (
+            <nav className="tabbar">
+              <div className="tabbar-inner">
+                {tabs.map(tab => (
+                  <button
+                    key={tab.key}
+                    className={`tab ${view === tab.key ? 'active' : ''}`}
+                    onClick={() => navigate(tab.key)}
+                    aria-label={tab.label}
+                  >
+                    <span className="tab-icon">
+                      {tab.icon}
+                      {tab.key === 'reminders' && reminderCount > 0 && (
+                        <span className="badge">{reminderCount > 99 ? '99+' : reminderCount}</span>
+                      )}
+                    </span>
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+            </nav>
+          )}
 
-      {/* Tabbar */}
-      {!['studentDetail', 'leadDetail', 'archives'].includes(view) && (
-        <nav className="tabbar">
-          <div className="tabbar-inner">
-            {tabs.map(tab => (
-              <button
-                key={tab.key}
-                className={`tab ${view === tab.key ? 'active' : ''}`}
-                onClick={() => navigate(tab.key)}
-              >
-                <div className="tab-icon">
-                  {tab.icon}
-                  {tab.key === 'reminders' && reminderCount > 0 && (
-                    <span className="badge tab-badge">{reminderCount > 99 ? '99+' : reminderCount}</span>
-                  )}
-                </div>
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </div>
-        </nav>
+          {!aiOpen && (
+            <button className="fab" onClick={() => setAiOpen(true)} aria-label="AI 助手">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1.27A7.05 7.05 0 0113 22h-2a7.05 7.05 0 01-6.73-4H3a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2z"/>
+              </svg>
+            </button>
+          )}
+
+          {aiOpen && <AiPanel onClose={() => setAiOpen(false)} data={data} />}
+
+          {toasts.length > 0 && <Toast messages={toasts} />}
+        </>
       )}
+    </div>
+  );
+}
 
-      {/* AI FAB */}
-      {!aiOpen && (
-        <button className="ai-fab" onClick={() => setAiOpen(true)}>
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1.27A7.05 7.05 0 0113 22h-2a7.05 7.05 0 01-6.73-4H3a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2z"/>
-          </svg>
-        </button>
-      )}
-
-      {/* AI Panel */}
-      {aiOpen && <AiPanel onClose={() => setAiOpen(false)} data={data} />}
-
-      {/* Toasts */}
-      {toasts.length > 0 && <Toast messages={toasts.map(t => t.msg)} />}
-      </>
-      )}
+function SkeletonPage() {
+  return (
+    <div>
+      <div className="skeleton skeleton-card" />
+      <div className="skeleton skeleton-card" />
+      <div className="skeleton skeleton-card" />
+      <div className="skeleton skeleton-card" />
     </div>
   );
 }
@@ -235,20 +301,20 @@ function LoginScreen({ onSuccess }) {
       await api.login(username, password);
       onSuccess();
     } catch (err) {
-      setError(err.message);
+      setError(err.message === 'Failed to fetch' || err.message.includes('network')
+        ? '无法连接到主机，请确认电脑已开机'
+        : err.message);
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 24 }}>
-      <div style={{ width: '100%', maxWidth: 360 }}>
-        <div style={{ textAlign: 'center', marginBottom: 40 }}>
-          <div style={{ width: 72, height: 72, borderRadius: 20, background: 'linear-gradient(135deg, var(--primary), var(--primary-strong))', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 32, color: '#fff', fontWeight: 700 }}>A</div>
-          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>Andy 工作台</div>
-          <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 4 }}>请登录后继续</div>
-        </div>
+    <div className="login-wrap">
+      <div className="login-card">
+        <div className="login-logo">A</div>
+        <div className="login-title">Andy 工作台</div>
+        <div className="login-sub">请登录后继续</div>
         <form onSubmit={handleLogin}>
           <div className="form-group">
             <label className="form-label">用户名</label>
@@ -260,14 +326,13 @@ function LoginScreen({ onSuccess }) {
             <input className="form-input" type="password" value={password} onChange={e => setPassword(e.target.value)}
               placeholder="输入密码" />
           </div>
-          {error && <div style={{ fontSize: 13, color: 'var(--danger)', marginBottom: 16 }}>{error}</div>}
+          {error && <div style={{ fontSize: 13, color: 'var(--danger)', marginBottom: 14 }}>{error}</div>}
           <button className="btn primary full" type="submit" disabled={busy || !username || !password}>
             {busy ? '登录中...' : '登录'}
           </button>
         </form>
-        <div style={{ textAlign: 'center', marginTop: 24, fontSize: 12, color: 'var(--text-tertiary)' }}>
-          <div>默认账号: admin / admin123</div>
-          <div style={{ marginTop: 4 }}>请及时修改密码</div>
+        <div className="login-hint">
+          <div>默认账号 admin / admin123，请及时在 server/.env 修改</div>
         </div>
       </div>
     </div>

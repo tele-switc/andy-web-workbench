@@ -1,51 +1,48 @@
 import React, { useState } from 'react';
 import * as api from '../api';
+import { LEAD_STATUSES, leadStatusTone, calcLeadReminders, todayStr, fmtMD } from '../lib/reminders';
 
 const ENGLISH_LEVELS = ['零基础', '启蒙阶段', '有英语学习基础'];
 const CONCERNS = ['价格', '效果', '孩子兴趣', '时间安排', '已有学习工具', '家庭规划'];
-const FOLLOW_STATUSES = ['新咨询', '已沟通', '考虑中', '待决定', '已成交', '暂缓'];
 
 export default function Leads({ data, navigate, refreshData }) {
   const [keyword, setKeyword] = useState('');
+  const [filter, setFilter] = useState('全部');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({});
+  const today = todayStr();
 
-  const list = keyword.trim()
-    ? data.leads.filter(l =>
-        l.wechatNickname.indexOf(keyword) >= 0 || (l.childGrade || '').indexOf(keyword) >= 0 || (l.source || '').indexOf(keyword) >= 0)
-    : [...data.leads].sort((a, b) => ((a.consultDate || '') < (b.consultDate || '') ? 1 : -1));
+  const statusCounts = {};
+  data.leads.forEach(l => {
+    statusCounts[l.followStatus || '新咨询'] = (statusCounts[l.followStatus || '新咨询'] || 0) + 1;
+  });
 
-  const today = new Date().toISOString().slice(0, 10);
-  const LEAD_MILESTONES = [
-    { key: 'f1', days: 1 }, { key: 'f7', days: 7 }, { key: 'f30', days: 30 }, { key: 'f180', days: 180 }
-  ];
-
-  const calcDue = (l) => {
-    const done = l.remindersDone || [];
-    let count = 0;
-    LEAD_MILESTONES.forEach(m => {
-      if (done.includes(m.key)) return;
-      if (!l.consultDate) return;
-      const d = new Date(l.consultDate);
-      d.setDate(d.getDate() + m.days);
-      if (d.toISOString().slice(0, 10) <= today) count++;
+  const list = data.leads
+    .filter(l => filter === '全部' || (l.followStatus || '新咨询') === filter)
+    .filter(l => keyword.trim()
+      ? l.wechatNickname.indexOf(keyword) >= 0 || (l.childGrade || '').indexOf(keyword) >= 0 || (l.source || '').indexOf(keyword) >= 0
+      : true)
+    .map(l => {
+      const rems = calcLeadReminders(l, today);
+      const overdue = rems.filter(r => r.overdue).length;
+      const next = rems[rems.length - 1]; // sorted: 最近到期在前（overdue 优先），取最后一条 = 最近一个节点
+      const nextRem = rems.length > 0 ? rems[rems.length - 1] : null;
+      return { l, overdue, nextRem };
+    })
+    .sort((a, b) => {
+      // 逾期优先，其次看下次跟进日期
+      if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+      const da = a.nextRem ? a.nextRem.dueDate : '9999';
+      const db = b.nextRem ? b.nextRem.dueDate : '9999';
+      if (da !== db) return da < db ? -1 : 1;
+      return (b.l.consultDate || '') < (a.l.consultDate || '') ? -1 : 1;
     });
-    return count;
-  };
-
-  const statusColor = (s) => {
-    const map = { '新咨询': '#635BFF', '已沟通': '#14B8A6', '考虑中': '#D97706', '待决定': '#8B5CF6', '已成交': '#16A34A', '暂缓': '#9E9EA8' };
-    return map[s] || '#9E9EA8';
-  };
 
   const handleSave = async () => {
     if (!form.wechatNickname) { alert('请填写家长微信昵称'); return; }
     try {
-      if (form._edit) {
-        await api.updateLead(form._edit, form);
-      } else {
-        await api.createLead(form);
-      }
+      if (form._edit) await api.updateLead(form._edit, form);
+      else await api.createLead(form);
       setShowForm(false);
       setForm({});
       refreshData();
@@ -68,17 +65,28 @@ export default function Leads({ data, navigate, refreshData }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 12 }}>
         <div>
-          <div style={{ fontSize: 20, fontWeight: 650, letterSpacing: '-0.02em' }}>意向学员</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-            共 {data.leads.length} 位咨询家长
-          </div>
+          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>意向学员</div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>共 {data.leads.length} 位咨询家长</div>
         </div>
       </div>
 
+      <div className="status-tabs">
+        <button className={`status-tab ${filter === '全部' ? 'active' : ''}`} onClick={() => setFilter('全部')}>
+          全部<span className="cnt">{data.leads.length}</span>
+        </button>
+        {LEAD_STATUSES.map(st => (
+          <button key={st} className={`status-tab ${filter === st ? 'active' : ''}`} onClick={() => setFilter(st)}>
+            {st}<span className="cnt">{statusCounts[st] || 0}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="search-wrap">
-        <span className="icon">🔍</span>
+        <span className="icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        </span>
         <input className="search" placeholder="搜索微信昵称 / 年级 / 来源"
           value={keyword} onChange={e => setKeyword(e.target.value)} />
       </div>
@@ -86,39 +94,61 @@ export default function Leads({ data, navigate, refreshData }) {
       {list.length === 0 ? (
         <div className="empty">
           <div className="big">🗂</div>
-          <div>{data.leads.length === 0 ? '还没有意向学员' : '没有匹配的家长'}</div>
+          <div>{data.leads.length === 0 ? '还没有意向学员' : '这个状态下没有家长'}</div>
         </div>
       ) : (
-        <div className="list">
-          {list.map(l => {
-            const n = calcDue(l);
-            const sc = statusColor(l.followStatus);
+        <div>
+          {list.map(({ l, overdue, nextRem }) => {
+            const tone = leadStatusTone(l.followStatus);
+            const nextText = !nextRem ? '暂无跟进节点'
+              : nextRem.overdue ? `已逾期 ${Math.round((new Date(today) - new Date(nextRem.dueDate)) / 86400000)} 天 · ${nextRem.title}`
+              : nextRem.dueDate === today ? `今天 · ${nextRem.title}`
+              : `${fmtMD(nextRem.dueDate)} · ${nextRem.title}`;
+            const nextTone = !nextRem ? 'sage' : nextRem.overdue ? 'overdue' : nextRem.dueDate === today ? 'today' : '';
             return (
-              <div key={l.id} className="item-row" onClick={() => navigate('leadDetail', { id: l.id })}>
-                <div className="avatar">{l.wechatNickname.charAt(0)}</div>
-                <div className="item-body">
-                  <div className="item-name">
-                    {l.wechatNickname}
-                    <span className="tag" style={{ background: sc + '1A', color: sc }}>{l.followStatus}</span>
+              <div key={l.id} className="lead-card tappable" onClick={() => navigate('leadDetail', { id: l.id })}>
+                <div className="lead-head">
+                  <div className={`avatar ${overdue > 0 ? 'rose' : 'amber'}`}>{l.wechatNickname.charAt(0)}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="lead-name">
+                      {l.wechatNickname}
+                      <span className={`tag ${tone}`}>{l.followStatus || '新咨询'}</span>
+                      {overdue > 0 && <span className="tag rose">逾期 {overdue} 项</span>}
+                    </div>
+                    <div className="lead-meta">
+                      <span>咨询 {l.consultDate || '—'}</span>
+                      {l.childGrade && <span>{l.childGrade}</span>}
+                      {l.source && <span>{l.source}</span>}
+                    </div>
                   </div>
-                  <div className="item-meta">咨询 {l.consultDate || '—'}{l.source ? ' · ' + l.source : ''}</div>
+                  <span style={{ color: 'var(--text-3)', fontSize: 15 }}>›</span>
                 </div>
-                {n > 0 && <div className="badge">{n}</div>}
+                {(l.concerns || []).length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 9 }}>
+                    {l.concerns.map(c => <span key={c} className="tag soft">{c}</span>)}
+                  </div>
+                )}
+                <div className="lead-foot">
+                  <span className={`lead-next ${nextTone}`}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                    {nextText}
+                  </span>
+                  <button className="btn sage sm" onClick={(e) => { e.stopPropagation(); navigate('leadDetail', { id: l.id }); }}>去跟进</button>
+                </div>
               </div>
             );
           })}
         </div>
       )}
 
-      <div style={{ marginTop: 16 }}>
-        <button className="btn primary full" onClick={() => openForm(null)}>
-          ＋ 新增意向学员
-        </button>
+      <div style={{ marginTop: 14 }}>
+        <button className="btn primary full" onClick={() => openForm(null)}>＋ 新增意向学员</button>
       </div>
 
       {showForm && (
-        <div className="overlay" onClick={(e) => { if (e.target.className === 'overlay') setShowForm(false); }}>
+        <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowForm(false); }}>
           <div className="sheet">
+            <div className="sheet-grip" />
             <div className="sheet-head">
               <div className="tt">{form._edit ? '编辑意向学员' : '新增意向学员'}</div>
               <button className="sheet-close" onClick={() => setShowForm(false)}>✕</button>
@@ -145,7 +175,7 @@ export default function Leads({ data, navigate, refreshData }) {
             </div>
             <div className="form-group">
               <label className="form-label">英语基础</label>
-              <div className="chips" style={{ display: 'flex', gap: 8 }}>
+              <div className="chips">
                 {ENGLISH_LEVELS.map(l => (
                   <span key={l} className={`chip ${form.englishLevel === l ? 'selected' : ''}`}
                     onClick={() => setForm(f => ({ ...f, englishLevel: l }))}>{l}</span>
@@ -159,7 +189,7 @@ export default function Leads({ data, navigate, refreshData }) {
             </div>
             <div className="form-group">
               <label className="form-label">家长关注点</label>
-              <div className="chips" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div className="chips">
                 {CONCERNS.map(c => (
                   <span key={c} className={`chip ${(form.concerns || []).includes(c) ? 'selected' : ''}`}
                     onClick={() => toggleConcern(c)}>{c}</span>
@@ -168,8 +198,8 @@ export default function Leads({ data, navigate, refreshData }) {
             </div>
             <div className="form-group">
               <label className="form-label">跟进状态</label>
-              <div className="chips" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {FOLLOW_STATUSES.map(s => (
+              <div className="chips">
+                {LEAD_STATUSES.map(s => (
                   <span key={s} className={`chip ${form.followStatus === s ? 'selected' : ''}`}
                     onClick={() => setForm(f => ({ ...f, followStatus: s }))}>{s}</span>
                 ))}

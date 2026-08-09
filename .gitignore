@@ -10,3 +10,5 @@ server/data/backups/
 logs/
 .DS_Store
 Thumbs.db
+.opencode/
+client/dist/

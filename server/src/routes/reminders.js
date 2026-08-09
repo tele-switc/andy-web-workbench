@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as db from '../db/index.js';
+import { broadcastChange } from '../ws/index.js';
 
 const router = Router();
 
@@ -120,6 +121,7 @@ router.post('/done', (req, res) => {
     db.updateLead(ownerId, { remindersDone: done });
   }
   db.logOperation('done', 'reminder', ownerId, { key });
+  broadcastChange('reminder', 'done', { ownerId, key, isStudent });
   res.json({ success: true });
 });
 

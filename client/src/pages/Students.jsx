@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import * as api from '../api';
+import { calcStudentDueCount, todayStr } from '../lib/reminders';
 
 const GENDERS = ['男', '女'];
 const ENGLISH_LEVELS = ['零基础', '启蒙阶段', '有英语学习基础'];
@@ -8,30 +9,12 @@ export default function Students({ data, navigate, refreshData }) {
   const [keyword, setKeyword] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({});
+  const today = todayStr();
 
   const list = keyword.trim()
     ? data.students.filter(s =>
         s.name.indexOf(keyword) >= 0 || (s.parentWechat || '').indexOf(keyword) >= 0 || (s.parentPhone || '').indexOf(keyword) >= 0)
     : data.students;
-
-  const today = new Date().toISOString().slice(0, 10);
-
-  const calcDueReminders = (s) => {
-    const STUDENT_MILESTONES = [
-      { key: 'd7', days: 7 }, { key: 'd30', days: 30 }, { key: 'd90', days: 90 },
-      { key: 'd180', days: 180 }, { key: 'd365', days: 365 }, { key: 'd730', days: 730 }, { key: 'd1095', days: 1095 }
-    ];
-    const done = s.remindersDone || [];
-    let count = 0;
-    STUDENT_MILESTONES.forEach(m => {
-      if (done.includes(m.key)) return;
-      if (!s.activateDate) return;
-      const d = new Date(s.activateDate);
-      d.setDate(d.getDate() + m.days);
-      if (d.toISOString().slice(0, 10) <= today) count++;
-    });
-    return count;
-  };
 
   const handleSave = async () => {
     if (!form.name || !form.activateDate) {
@@ -39,11 +22,8 @@ export default function Students({ data, navigate, refreshData }) {
       return;
     }
     try {
-      if (form._edit) {
-        await api.updateStudent(form._edit, form);
-      } else {
-        await api.createStudent(form);
-      }
+      if (form._edit) await api.updateStudent(form._edit, form);
+      else await api.createStudent(form);
       setShowForm(false);
       setForm({});
       refreshData();
@@ -59,17 +39,17 @@ export default function Students({ data, navigate, refreshData }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 14 }}>
         <div>
-          <div style={{ fontSize: 20, fontWeight: 650, letterSpacing: '-0.02em' }}>正式学员</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-            共 {data.students.length} 位在读学员
-          </div>
+          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>正式学员</div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>共 {data.students.length} 位在读学员</div>
         </div>
       </div>
 
       <div className="search-wrap">
-        <span className="icon">🔍</span>
+        <span className="icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        </span>
         <input className="search" placeholder="搜索姓名 / 家长微信 / 手机号"
           value={keyword} onChange={e => setKeyword(e.target.value)} />
       </div>
@@ -82,34 +62,33 @@ export default function Students({ data, navigate, refreshData }) {
       ) : (
         <div className="list">
           {list.map(s => {
-            const n = calcDueReminders(s);
+            const n = calcStudentDueCount(s, today);
             return (
-              <div key={s.id} className="item-row" onClick={() => navigate('studentDetail', { id: s.id })}>
+              <div key={s.id} className="row tappable" onClick={() => navigate('studentDetail', { id: s.id })}>
                 <div className="avatar">{s.name.charAt(0)}</div>
-                <div className="item-body">
-                  <div className="item-name">
+                <div className="row-body">
+                  <div className="row-title">
                     {s.name}
-                    {s.gender && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400 }}>{s.gender}</span>}
+                    {s.gender && <span className="tag soft">{s.gender}</span>}
+                    {n > 0 && <span className="tag rose">{n} 项待回访</span>}
                   </div>
-                  <div className="item-meta">{s.grade || '未填年级'} · 激活 {s.activateDate || '—'}</div>
+                  <div className="row-meta">{s.grade || '未填年级'} · 激活 {s.activateDate || '—'}</div>
                 </div>
-                {n > 0 && <div className="badge">{n}</div>}
+                <span style={{ color: 'var(--text-3)', fontSize: 15 }}>›</span>
               </div>
             );
           })}
         </div>
       )}
 
-      <div style={{ marginTop: 16 }}>
-        <button className="btn primary full" onClick={() => openForm(null)}>
-          ＋ 新增学员
-        </button>
+      <div style={{ marginTop: 14 }}>
+        <button className="btn primary full" onClick={() => openForm(null)}>＋ 新增学员</button>
       </div>
 
-      {/* Form Sheet */}
       {showForm && (
-        <div className="overlay" onClick={(e) => { if (e.target.className === 'overlay') setShowForm(false); }}>
+        <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowForm(false); }}>
           <div className="sheet">
+            <div className="sheet-grip" />
             <div className="sheet-head">
               <div className="tt">{form._edit ? '编辑学员' : '新增学员'}</div>
               <button className="sheet-close" onClick={() => setShowForm(false)}>✕</button>
@@ -131,7 +110,7 @@ export default function Students({ data, navigate, refreshData }) {
             </div>
             <div className="form-group">
               <label className="form-label">性别</label>
-              <div className="chips" style={{ display: 'flex', gap: 8 }}>
+              <div className="chips">
                 {GENDERS.map(g => (
                   <span key={g} className={`chip ${form.gender === g ? 'selected' : ''}`}
                     onClick={() => setForm(f => ({ ...f, gender: g }))}>{g}</span>
@@ -150,7 +129,7 @@ export default function Students({ data, navigate, refreshData }) {
             </div>
             <div className="form-group">
               <label className="form-label">英语基础</label>
-              <div className="chips" style={{ display: 'flex', gap: 8 }}>
+              <div className="chips">
                 {ENGLISH_LEVELS.map(l => (
                   <span key={l} className={`chip ${form.englishLevel === l ? 'selected' : ''}`}
                     onClick={() => setForm(f => ({ ...f, englishLevel: l }))}>{l}</span>

@@ -4,12 +4,12 @@ import cors from 'cors';
 import http from 'http';
 import path from 'path';
 import os from 'os';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 import * as db from './db/index.js';
 import { setupWebSocket, broadcastChange, getConnectedCount } from './ws/index.js';
-import { requireAuth, wsAuthToken } from './auth.js';
-import authRouter from './routes/auth.js';
+import { requireAuth, wsAuthToken } from './auth.js';import authRouter from './routes/auth.js';
 import studentsRouter from './routes/students.js';
 import leadsRouter from './routes/leads.js';
 import recordsRouter from './routes/records.js';
@@ -22,6 +22,21 @@ const ROOT = path.resolve(__dirname, '../..');
 const PORT = Number(process.env.PORT || 3000);
 const app = express();
 const server = http.createServer(app);
+
+// WebSocket server (real-time refresh across devices)
+setupWebSocket(server);
+
+// Read the stable public URL written by the Funnel setup script
+function getPublicUrl() {
+  try {
+    const f = path.join(ROOT, 'logs', 'public-url.txt');
+    if (fs.existsSync(f)) {
+      const url = fs.readFileSync(f, 'utf8').trim();
+      if (url) return url;
+    }
+  } catch {}
+  return process.env.PUBLIC_URL || '';
+}
 
 // Middleware
 app.use(cors({
@@ -49,9 +64,21 @@ app.get('/api/health', (req, res) => {
       status: 'ok',
       time: new Date().toISOString(),
       connectedClients: getConnectedCount(),
+      publicUrl: getPublicUrl(),
       students: db.getAllStudents().length,
       leads: db.getAllLeads().length,
       records: db.getAllRecords().length
+    }
+  });
+});
+
+// Public config (client uses this to auto-discover the stable API URL)
+app.get('/api/config', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      publicUrl: getPublicUrl(),
+      name: 'Andy 工作台'
     }
   });
 });
@@ -114,9 +141,15 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  │ WebSocket   ws://localhost:' + PORT + '/ws');
   console.log('  └──────────────────────────────────────');
   console.log('');
-  console.log('  使用 Cloudflare Tunnel 实现外网访问:');
-  console.log('    npm run tunnel   # 或 powershell -File tunnel-setup.ps1');
-  console.log('');
+  const pub = getPublicUrl();
+  if (pub) {
+    console.log('  固定公网地址 (Tailscale Funnel):');
+    console.log(`    ${pub}`);
+    console.log('');
+  } else {
+    console.log('  公网访问: 运行 scripts/tailscale-setup.ps1 启用 Funnel 后自动显示');
+    console.log('');
+  }
 });
 
 // Graceful shutdown

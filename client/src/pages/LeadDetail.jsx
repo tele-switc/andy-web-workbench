@@ -1,29 +1,22 @@
 import React, { useState } from 'react';
 import * as api from '../api';
-
-const LEAD_MILESTONES = [
-  { key: 'f1', days: 1, title: '第一次跟进' },
-  { key: 'f7', days: 7, title: '第二次跟进' },
-  { key: 'f30', days: 30, title: '长期维护' },
-  { key: 'f180', days: 180, title: '重新唤醒' },
-];
+import { LEAD_STATUSES, LEAD_MILESTONES, leadStatusTone, addDays, todayStr } from '../lib/reminders';
 
 export default function LeadDetail({ data, navigate, params, refreshData }) {
   const l = data.leads.find(x => x.id === params.id);
   const [showForm, setShowForm] = useState(false);
   const [converting, setConverting] = useState(false);
+  const [form, setForm] = useState({});
 
   if (!l) {
     navigate('leads');
     return null;
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStr();
   const done = l.remindersDone || [];
-  const sc = {
-    '新咨询': '#635BFF', '已沟通': '#14B8A6', '考虑中': '#D97706',
-    '待决定': '#8B5CF6', '已成交': '#16A34A', '暂缓': '#9E9EA8'
-  }[l.followStatus] || '#9E9EA8';
+  const tone = leadStatusTone(l.followStatus);
+  const converted = (l.followStatus || '') === '已转正式';
 
   const handleDelete = async () => {
     if (!window.confirm('确定删除这位家长的信息？')) return;
@@ -50,83 +43,147 @@ export default function LeadDetail({ data, navigate, params, refreshData }) {
     }
   };
 
+  const handleSave = async () => {
+    try {
+      await api.updateLead(l.id, form);
+      refreshData();
+      setShowForm(false);
+      setForm({});
+    } catch (err) {
+      alert('保存失败: ' + err.message);
+    }
+  };
+
   return (
     <div>
       <div className="back-bar">
-        <button className="back" onClick={() => navigate('leads')}>‹</button>
-        <div className="tt">意向学员详情</div>
-        <button className="act" onClick={() => setShowForm(true)}>编辑</button>
+        <button className="back" onClick={() => navigate('leads')} aria-label="返回">‹</button>
+        <div className="tt">意向学员</div>
+        <button className="act" onClick={() => { setForm({ ...l }); setShowForm(true); }}>编辑</button>
       </div>
 
-      <div className="card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div className="avatar lg">{l.wechatNickname.charAt(0)}</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>
+      <div className="profile-card">
+        <div className="profile-top">
+          <div className={`avatar lg ${converted ? '' : 'amber'}`}>{l.wechatNickname.charAt(0)}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="profile-name">
               {l.wechatNickname}
-              <span className="tag" style={{ background: sc + '1A', color: sc, marginLeft: 8 }}>{l.followStatus}</span>
+              <span className={`tag ${tone}`}>{l.followStatus || '新咨询'}</span>
+              {converted && <span className="tag sage">已转为正式学员</span>}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-              咨询日期：{l.consultDate || '—'}
-            </div>
+            <div className="profile-sub">咨询于 {l.consultDate || '—'}{l.source ? ' · ' + l.source : ''}</div>
           </div>
-          <button className="btn danger sm" onClick={handleDelete}>删除</button>
+          {!converted && <button className="btn danger sm" onClick={handleDelete}>删除</button>}
         </div>
-        <div className="divider" />
-        <div style={{ display: 'flex', textAlign: 'center', padding: '6px 0' }}>
-          <div className="stat"><div className="num" style={{ fontSize: 14, fontWeight: 600 }}>{l.childAge || '—'}</div><div className="lab">孩子年龄</div></div>
-          <div className="stat"><div className="num" style={{ fontSize: 14, fontWeight: 600 }}>{l.childGrade || '—'}</div><div className="lab">孩子年级</div></div>
-          <div className="stat"><div className="num" style={{ fontSize: 14, fontWeight: 600 }}>{l.englishLevel || '—'}</div><div className="lab">英语基础</div></div>
-          <div className="stat"><div className="num" style={{ fontSize: 14, fontWeight: 600 }}>{l.source || '—'}</div><div className="lab">咨询来源</div></div>
+
+        <div className="stat-grid">
+          <div className="stat-cell"><div className="v">{l.childAge || '—'}</div><div className="k">孩子年龄</div></div>
+          <div className="stat-cell"><div className="v">{l.childGrade || '—'}</div><div className="k">孩子年级</div></div>
+          <div className="stat-cell"><div className="v">{l.englishLevel || '—'}</div><div className="k">英语基础</div></div>
         </div>
+
         {(l.concerns || []).length > 0 && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '8px 0' }}>
-            {l.concerns.map(c => (
-              <span key={c} className="tag primary">{c}</span>
-            ))}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+            {l.concerns.map(c => <span key={c} className="tag soft">{c}</span>)}
           </div>
         )}
-        {l.notes && <div style={{ fontSize: 13, color: 'var(--text-secondary)', padding: '4px 0' }}>{l.notes}</div>}
+        {l.notes && <div style={{ fontSize: 13.5, color: 'var(--text-2)', marginTop: 12 }}>{l.notes}</div>}
       </div>
 
+      {/* 跟进节点时间轴 */}
       <div className="card">
-        <div className="card-title-row">
+        <div className="card-head">
           <span className="card-title">跟进节点</span>
-          <span className="card-link">按咨询日期自动计算</span>
+          <span className="card-sub">按咨询日期自动计算</span>
         </div>
-        {LEAD_MILESTONES.map(m => {
-          const due = (() => {
-            if (done.includes(m.key)) return { done: true, text: '已完成', color: 'var(--success)' };
-            if (!l.consultDate) return { done: false, text: '无咨询日期', color: 'var(--text-tertiary)' };
-            const d = new Date(l.consultDate);
-            d.setDate(d.getDate() + m.days);
-            const ds = d.toISOString().slice(0, 10);
-            if (ds < today) return { done: false, text: '咨询后' + m.days + '天 · ' + ds + '（待跟进）', color: 'var(--danger)' };
-            return { done: false, text: '咨询后' + m.days + '天 · ' + ds, color: 'var(--text-tertiary)' };
-          })();
-          return (
-            <div key={m.key} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '9px 0' }}>
-              <div className="tl-dot" style={{
-                background: due.done ? '#ECFDF3' : due.color === 'var(--danger)' ? '#FEF2F2' : '#F1F1F3',
-                color: due.done ? 'var(--success)' : due.color === 'var(--danger)' ? 'var(--danger)' : 'var(--text-tertiary)'
-              }}>{due.done ? '✓' : '·'}</div>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{m.title}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{due.text}</div>
-              </div>
-            </div>
-          );
-        })}
+        {!l.consultDate ? (
+          <div className="empty" style={{ padding: '14px 0' }}>填写咨询日期后自动生成跟进节点</div>
+        ) : (
+          <div className="timeline" style={{ paddingTop: 2 }}>
+            {LEAD_MILESTONES.map(m => {
+              const isDone = done.includes(m.key);
+              const due = addDays(l.consultDate, m.days);
+              const state = isDone
+                ? { cls: 'done', text: `${m.title} · 已完成` }
+                : due < today
+                  ? { cls: 'rose', text: `${m.title} · ${due} · 待跟进` }
+                  : { cls: '', text: `${m.title} · ${due}` };
+              return (
+                <div key={m.key} className={`tl-node ${state.cls}`}>
+                  <div className="tl-card">
+                    <div className="tl-head">
+                      <div className="tl-title">{m.title}</div>
+                      <div className="tl-date">{due}</div>
+                    </div>
+                    <div className="tl-body">
+                      <p><span className="k">状态</span><span className="v">{isDone ? '已完成 ✓' : due < today ? '待跟进' : '未到期'}</span></p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {l.followStatus === '已成交' ? (
-        <div className="card" style={{ textAlign: 'center', color: 'var(--success)', fontSize: 13 }}>
-          ✓ 已成交，该家长已转为正式学员
+      {converted ? (
+        <div className="stage-box center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+          <span style={{ color: 'var(--success)', fontWeight: 600 }}>已转为正式学员</span>
         </div>
       ) : (
         <button className="btn primary full" onClick={handleConvert} disabled={converting}>
           {converting ? '转化中...' : '转为正式学员'}
         </button>
+      )}
+
+      {showForm && (
+        <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowForm(false); }}>
+          <div className="sheet">
+            <div className="sheet-grip" />
+            <div className="sheet-head">
+              <div className="tt">编辑意向学员</div>
+              <button className="sheet-close" onClick={() => setShowForm(false)}>✕</button>
+            </div>
+            <div className="form-group">
+              <label className="form-label">家长微信昵称</label>
+              <input className="form-input" value={form.wechatNickname || ''} onChange={e => setForm(f => ({ ...f, wechatNickname: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">咨询日期</label>
+              <input className="form-input" type="date" value={form.consultDate || ''} onChange={e => setForm(f => ({ ...f, consultDate: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">孩子年龄</label>
+              <input className="form-input" value={form.childAge || ''} onChange={e => setForm(f => ({ ...f, childAge: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">孩子年级</label>
+              <input className="form-input" value={form.childGrade || ''} onChange={e => setForm(f => ({ ...f, childGrade: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">咨询来源</label>
+              <input className="form-input" value={form.source || ''} onChange={e => setForm(f => ({ ...f, source: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">跟进状态</label>
+              <div className="chips">
+                {LEAD_STATUSES.map(s => (
+                  <span key={s} className={`chip ${form.followStatus === s ? 'selected' : ''}`}
+                    onClick={() => setForm(f => ({ ...f, followStatus: s }))}>{s}</span>
+                ))}
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">备注</label>
+              <textarea className="form-textarea" value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+            </div>
+            <div className="sheet-actions">
+              <button className="btn neutral" onClick={() => setShowForm(false)}>取消</button>
+              <button className="btn primary" onClick={handleSave}>保存</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

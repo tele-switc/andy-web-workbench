@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as db from '../db/index.js';
+import { broadcastChange } from '../ws/index.js';
 
 const router = Router();
 
@@ -47,6 +48,7 @@ router.post('/', (req, res) => {
   db.logOperation('create', 'student', data.id, { name });
   const result = { success: true, data: student };
   if (operation_id) db.saveIdempotency(operation_id, result);
+  broadcastChange('student', 'create', student);
   res.status(201).json(result);
 });
 
@@ -56,6 +58,7 @@ router.put('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ success: false, error: '学员不存在' });
   const student = db.updateStudent(req.params.id, req.body);
   db.logOperation('update', 'student', req.params.id, { name: req.body.name });
+  broadcastChange('student', 'update', student);
   res.json({ success: true, data: student });
 });
 
@@ -65,6 +68,7 @@ router.delete('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ success: false, error: '学员不存在' });
   db.deleteStudent(req.params.id);
   db.logOperation('delete', 'student', req.params.id, { name: existing.name });
+  broadcastChange('student', 'delete', { id: req.params.id });
   res.json({ success: true });
 });
 

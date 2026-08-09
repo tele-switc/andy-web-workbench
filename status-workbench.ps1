@@ -35,27 +35,36 @@ if (Test-Path $dbPath) {
     Write-Host "  [数据]  ⚠️ 数据库文件不存在" -ForegroundColor Yellow
 }
 
-# 3. 隧道
-$cf = Get-Process cloudflared -ErrorAction SilentlyContinue
-if ($cf) {
-    Write-Host "  [隧道]  ✅ cloudflared 运行中" -ForegroundColor Green
-    $tunnelLog = "E:\Projects\AndyWebWorkbench\logs\tunnel.log"
-    if (Test-Path $tunnelLog) {
-        $url = Select-String -Path $tunnelLog -Pattern "https://[\w-]+\.trycloudflare\.com" | Select-Object -Last 1
-        if ($url) {
-            Write-Host "          └─ 公网地址: $($url.Matches[0].Value)" -ForegroundColor Green
-        }
+# 3. 公网 (Tailscale Funnel)
+$tsExe = "C:\Program Files\Tailscale\tailscale.exe"
+$publicUrl = Get-Content "E:\Projects\AndyWebWorkbench\logs\public-url.txt" -ErrorAction SilentlyContinue
+$tsOnline = $false
+if (Test-Path $tsExe) {
+    try {
+        $tsj = & $tsExe status --json | ConvertFrom-Json
+        $tsOnline = $tsj.Self.Online
+    } catch {}
+}
+if ($tsOnline) {
+    $fs = (& $tsExe funnel status 2>&1 | Out-String)
+    if ($fs -match "Funnel on") {
+        Write-Host "  [公网]  ✅ Tailscale Funnel 运行中" -ForegroundColor Green
+        if ($publicUrl) { Write-Host "          └─ 固定地址: $publicUrl" -ForegroundColor Green }
+    } else {
+        Write-Host "  [公网]  ⚠️ Tailscale 在线但 Funnel 未配置" -ForegroundColor Yellow
     }
 } else {
-    Write-Host "  [隧道]  ⚠️ cloudflared 未运行" -ForegroundColor Yellow
+    Write-Host "  [公网]  ❌ Tailscale 未登录/未运行" -ForegroundColor Red
+    Write-Host "          └─ 请运行: scripts\tailscale-setup.ps1 (管理员) 完成登录与 Funnel" -ForegroundColor Yellow
 }
 
 # 4. 自启动任务
 $task = Get-ScheduledTask -TaskName "AndyWorkbench" -ErrorAction SilentlyContinue
-if ($task) {
-    Write-Host "  [自启]  ✅ 已注册 (开机自启动)" -ForegroundColor Green
+$startupLnk = Join-Path ([Environment]::GetFolderPath('Startup')) "AndyWorkbench.lnk"
+if ($task -or (Test-Path $startupLnk)) {
+    Write-Host "  [自启]  ✅ 已注册 (登录自动启动)" -ForegroundColor Green
 } else {
-    Write-Host "  [自启]  ⚠️ 未注册" -ForegroundColor Yellow
+    Write-Host "  [自启]  ⚠️ 未注册 (运行 start-workbench.ps1 -InstallService)" -ForegroundColor Yellow
 }
 
 # 5. 日志
@@ -69,4 +78,5 @@ if ($logFiles) {
 
 Write-Host ""
 Write-Host "本机访问: http://localhost:3000" -ForegroundColor Cyan
+if ($publicUrl) { Write-Host "公网访问: $publicUrl" -ForegroundColor Cyan }
 Write-Host ""

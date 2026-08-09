@@ -1,9 +1,25 @@
-// API 客户端 — 自动连接本地/远程服务器 + 离线队列 + 认证
+// API 客户端 — 自动连接本地/远程服务器 + 离线队列 + 认证 + 主机在线状态
 import * as idb from '../db/indexeddb';
 
-// API Base URL — 可配置（用于 GitHub Pages 连接远程服务器）
-let API_BASE = '/api';
+// 固定公网 API 地址（Tailscale Funnel，重启不变）。GitHub Pages 前端用它连接家里电脑。
+const REMOTE_API_BASE = 'https://tech-taylor.taila3ecd9.ts.net';
+
+// API Base URL — 可配置（localStorage 覆盖 > 按部署位置自动判断）
+let API_BASE = detectDefaultBase();
 let CUSTOM_API_URL = localStorage.getItem('andy_api_base_url') || '';
+
+// 自动判断 API 地址：静态托管（GitHub Pages 等）-> 固定公网地址；Node 后端同源 -> /api
+function detectDefaultBase() {
+  if (typeof window === 'undefined') return '/api';
+  const h = window.location.hostname;
+  if (
+    h.endsWith('.github.io') || h.endsWith('.pages.dev') ||
+    h.endsWith('.vercel.app') || h.endsWith('.netlify.app')
+  ) {
+    return REMOTE_API_BASE;
+  }
+  return '/api';
+}
 
 export function getApiBase() {
   return CUSTOM_API_URL || API_BASE;
@@ -16,12 +32,50 @@ export function setApiBaseUrl(url) {
 }
 
 function resolvePath(path) {
-  const base = CUSTOM_API_URL || '';
-  if (base) return `${base}${path}`;
-  return `${API_BASE}${path}`;
+  const base = CUSTOM_API_URL || API_BASE;
+  if (base && base.startsWith('http')) return `${base}${path}`;
+  return `${base}${path}`;
 }
 
-// Token management
+// ---- 主机在线状态（区分“手机断网”与“电脑关机”） ----
+let hostOnline = true;
+const hostListeners = [];
+
+export function onHostStatus(cb) {
+  hostListeners.push(cb);
+  return () => {
+    const i = hostListeners.indexOf(cb);
+    if (i >= 0) hostListeners.splice(i, 1);
+  };
+}
+export function getHostOnline() { return hostOnline; }
+
+function setHostOnline(v) {
+  if (hostOnline !== v) {
+    hostOnline = v;
+    for (const cb of hostListeners) { try { cb(v); } catch {} }
+  }
+}
+
+// 探测后端是否可达（6 秒超时）
+export async function checkHostHealth() {
+  const url = resolvePath('/health');
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
+    clearTimeout(t);
+    const ok = res.ok;
+    setHostOnline(ok);
+    return ok;
+  } catch {
+    clearTimeout(t);
+    setHostOnline(false);
+    return false;
+  }
+}
+
+// ---- Token 管理 ----
 let authToken = localStorage.getItem('andy_auth_token') || '';
 let authCallbacks = [];
 
@@ -59,28 +113,24 @@ export async function login(username, password) {
 
 let ws = null;
 let wsReconnectTimer = null;
+let wsRetry = 0;
 let messageHandlers = [];
 let isOnline = navigator.onLine !== false;
-
-
 
 // ---- Toast (local) ----
 let toastFn = null;
 export function setToastHandler(fn) {
   toastFn = fn;
 }
-function toast(msg) {
-  if (toastFn) toastFn(msg);
+function toast(msg, type) {
+  if (toastFn) toastFn(msg, type);
 }
 
-// Generic fetch session
-let sessionFetch = null;
-
+// ---- 通用 fetch：离线入队 + 认证 + 主机状态 ----
 function makeIdempotencyKey() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 }
 
-// ---- Generic fetch helper with offline queue + auth ----
 async function apiFetch(path, options = {}) {
   const url = resolvePath(path);
   const method = options.method || 'GET';
@@ -90,7 +140,6 @@ async function apiFetch(path, options = {}) {
   };
   if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
-  // Add idempotency key for mutations (prevents duplicate writes on retry)
   if (method !== 'GET' && options.body) {
     try {
       const body = JSON.parse(options.body);
@@ -102,67 +151,60 @@ async function apiFetch(path, options = {}) {
 
   const config = { method, headers, ...options };
 
-  // If offline and this is a mutation, queue it
-  if (!isOnline && method !== 'GET') {
+  const queueOp = async (over) => {
     const op = {
-      operation_id: makeIdempotencyKey(),
+      operation_id: over.operation_id || makeIdempotencyKey(),
       action: method.toLowerCase(),
-      entity: path.split('/')[1], // students, leads, records
+      entity: path.split('/')[1],
       data: { path, options: config },
       timestamp: Date.now()
     };
     await idb.enqueueOperation(op);
     console.log('[Offline] Queued operation:', op);
-    return { queued: true, message: '操作已加入离线队列，联网后自动同步' };
+    return { queued: true, message: '已暂存到本机，联网后自动同步' };
+  };
+
+  // 手机断网：直接入队
+  if (!isOnline && method !== 'GET') {
+    return queueOp({});
   }
 
   try {
     const res = await fetch(url, config);
-    // 401 — token invalid
     if (res.status === 401) {
       setToken('');
       throw new Error('登录已过期，请重新登录');
     }
     const data = await res.json();
-    if (!data.success) {
-      throw new Error(data.error || '请求失败');
-    }
+    if (!data.success) throw new Error(data.error || '请求失败');
+    setHostOnline(true);
     isOnline = true;
     return data.data;
   } catch (err) {
-    // If it's a network error and this is a mutation, queue it
-    if (method !== 'GET' && err.message !== '登录已过期，请重新登录') {
-      const op = {
-        operation_id: makeIdempotencyKey(),
-        action: method.toLowerCase(),
-        entity: path.split('/')[1],
-        data: { path, options: config },
-        timestamp: Date.now()
-      };
-      await idb.enqueueOperation(op);
-      console.log('[Offline] Queued operation on error:', op);
-      return { queued: true, message: '操作已加入离线队列，联网后自动同步' };
+    if (err.message === '登录已过期，请重新登录') throw err;
+    // 请求失败 = 主机可能离线
+    setHostOnline(false);
+    if (method !== 'GET') {
+      return queueOp({});
     }
-    // For GET requests, try IndexedDB cache
-    if (method === 'GET') {
-      const cacheKey = path.replace(/^\//, '').replace(/[?/=]/g, '_');
-      const cached = await idb.cacheGet(cacheKey);
-      if (cached) return cached;
-    }
+    // GET：尝试本地缓存
+    const cacheKey = path.replace(/^\//, '').replace(/[?/=]/g, '_');
+    const cached = await idb.cacheGet(cacheKey);
+    if (cached) return cached;
     throw err;
   }
 }
 
-// Process queued operations when back online
+// ---- 联网恢复时处理离线队列 ----
 export async function processOfflineQueue() {
   const ops = await idb.getQueuedOps();
   if (ops.length === 0) return;
 
   console.log(`[Offline] Processing ${ops.length} queued operations...`);
+  let anySuccess = false;
   for (const op of ops) {
     try {
       const { path, options } = op.data;
-      // Ensure auth token is attached
       if (authToken && options.headers) {
         options.headers['Authorization'] = `Bearer ${authToken}`;
       }
@@ -171,25 +213,22 @@ export async function processOfflineQueue() {
       const data = await res.json();
       if (data.success) {
         await idb.removeQueuedOp(op.id);
+        anySuccess = true;
         console.log(`[Offline] Processed: ${op.action} ${op.entity}`);
       } else if (res.status === 401) {
-        // Auth error — can't process. Stop.
         console.warn('[Offline] Auth error, stopping queue processing');
         break;
       } else {
-        // Server error — keep in queue, try again later
         console.warn(`[Offline] Server error: ${data.error}`);
       }
     } catch (err) {
       console.warn(`[Offline] Failed to process: ${op.action} ${op.entity}`, err.message);
-      break; // Stop processing if still offline
+      break;
     }
   }
-  // Refresh data after processing
   const remaining = await idb.getQueuedOps();
-  if (remaining.length === 0) {
+  if (remaining.length === 0 && anySuccess) {
     console.log('[Offline] All queued operations processed');
-    // Refresh data from server
     try {
       const [students, leads, records] = await Promise.all([
         apiFetch('/students'),
@@ -201,13 +240,13 @@ export async function processOfflineQueue() {
   }
 }
 
-// Listen for online status
 window.addEventListener('online', () => {
   isOnline = true;
-  processOfflineQueue();
+  checkHostHealth().then(ok => { if (ok) processOfflineQueue(); });
 });
 window.addEventListener('offline', () => {
   isOnline = false;
+  setHostOnline(false);
 });
 
 // ---- Students ----
@@ -299,9 +338,18 @@ export async function getAiStatus() {
   return apiFetch('/ai/status');
 }
 
-// ---- Health ----
+// ---- Health / Config ----
 export async function getHealth() {
   return apiFetch('/health');
+}
+export async function getConfig() {
+  try {
+    const res = await fetch(resolvePath('/config'), { cache: 'no-store' });
+    const data = await res.json();
+    return data.data || {};
+  } catch {
+    return {};
+  }
 }
 
 // ---- Logs ----
@@ -315,16 +363,20 @@ export function connectWebSocket(handlers = {}) {
   if (ws) return;
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const baseHost = CUSTOM_API_URL ? new URL(CUSTOM_API_URL).host : window.location.host;
-  const wsToken = authToken;
-  const wsUrl = `${protocol}//${baseHost}/ws?token=${encodeURIComponent(wsToken)}`;
+  const baseHost = (CUSTOM_API_URL || API_BASE).startsWith('http')
+    ? new URL(CUSTOM_API_URL || API_BASE).host
+    : window.location.host;
 
   function connect() {
     try {
+      const wsToken = getToken(); // 每次重连都用最新 token（登录后自动生效）
+      const wsUrl = `${protocol}//${baseHost}/ws?token=${encodeURIComponent(wsToken)}`;
       ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
         console.log('[WS] 已连接');
+        wsRetry = 0;
+        setHostOnline(true);
         if (handlers.onStatus) handlers.onStatus(true);
         ws.send(JSON.stringify({ type: 'sync_request' }));
       };
@@ -332,7 +384,6 @@ export function connectWebSocket(handlers = {}) {
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          // Dispatch to all registered handlers
           messageHandlers.forEach(h => {
             if (msg.type === 'sync' && h.onSync) h.onSync(msg.data);
             if (msg.type === 'change' && h.onChange) h.onChange(msg);
@@ -345,11 +396,14 @@ export function connectWebSocket(handlers = {}) {
 
       ws.onclose = () => {
         console.log('[WS] 连接断开');
+        // WS 断开不视为主机离线（HTTP 健康检查才决定主机状态），避免 WS 偶发失败误报
         if (handlers.onStatus) handlers.onStatus(false);
         ws = null;
-        // Auto reconnect
         clearTimeout(wsReconnectTimer);
-        wsReconnectTimer = setTimeout(connect, 3000);
+        // 指数退避重连：4s → 8s → 16s → 30s，对 Funnel 更友好
+        const delay = Math.min(4000 * Math.pow(2, wsRetry), 30000);
+        wsRetry = Math.min(wsRetry + 1, 5);
+        wsReconnectTimer = setTimeout(connect, delay);
       };
 
       ws.onerror = (err) => {
@@ -359,7 +413,9 @@ export function connectWebSocket(handlers = {}) {
     } catch (e) {
       console.error('[WS] 连接失败:', e);
       clearTimeout(wsReconnectTimer);
-      wsReconnectTimer = setTimeout(connect, 5000);
+      const delay = Math.min(4000 * Math.pow(2, wsRetry), 30000);
+      wsRetry = Math.min(wsRetry + 1, 5);
+      wsReconnectTimer = setTimeout(connect, delay);
     }
   }
 

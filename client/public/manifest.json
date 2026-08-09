@@ -1,12 +1,13 @@
 {
-  "name": "Andy英语学习规划师工作台",
-  "short_name": "Andy工作台",
-  "description": "英语学习规划师工作台 — Kimi 风格 · AI 助手",
-  "start_url": "/",
+  "name": "Andy 英语学习规划师工作台",
+  "short_name": "Andy 工作台",
+  "description": "学员管理、成长档案、回访提醒 — 本地数据，公网访问",
+  "start_url": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "theme_color": "#F5F3FF",
-  "background_color": "#FAFAFA",
+  "theme_color": "#F6F6F2",
+  "background_color": "#F6F6F2",
+  "categories": ["education", "productivity"],
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }

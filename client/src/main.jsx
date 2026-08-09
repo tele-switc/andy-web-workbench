@@ -1,12 +1,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import './styles/kimi.css';
+import './styles/app.css';
 
-// Register service worker for PWA
+// Register service worker for PWA (relative path → works on any base path)
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    const swPath = import.meta.env.BASE_URL === './' ? './sw.js' : import.meta.env.BASE_URL + 'sw.js';
+    navigator.serviceWorker.register(swPath).catch(() => {});
   });
 }
 

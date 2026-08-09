@@ -6,7 +6,7 @@ export default function Toast({ messages }) {
   useEffect(() => {
     if (messages.length > 0) {
       setVisible(messages);
-      const timer = setTimeout(() => setVisible([]), 2000);
+      const timer = setTimeout(() => setVisible([]), 2400);
       return () => clearTimeout(timer);
     }
   }, [messages]);
@@ -16,7 +16,7 @@ export default function Toast({ messages }) {
   return (
     <div className="toast-wrap">
       {visible.map((msg, i) => (
-        <div key={i} className="toast">{msg}</div>
+        <div key={i} className={`toast ${msg.type || ''}`}>{msg.text || msg}</div>
       ))}
     </div>
   );

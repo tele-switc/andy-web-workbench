@@ -9,6 +9,8 @@
     "client": "cd client && npx vite --host",
     "client:build": "cd client && npx vite build",
     "setup": "cd server && npm install && cd ../client && npm install",
-    "tunnel": "powershell -ExecutionPolicy Bypass -File tunnel-setup.ps1"
+    "tailscale": "powershell -ExecutionPolicy Bypass -File scripts/tailscale-setup.ps1",
+    "start": "powershell -ExecutionPolicy Bypass -File start-workbench.ps1",
+    "status": "powershell -ExecutionPolicy Bypass -File status-workbench.ps1"
   }
 }
