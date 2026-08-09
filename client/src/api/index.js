@@ -2,7 +2,8 @@
 import * as idb from '../db/indexeddb';
 
 // 固定公网 API 地址（Tailscale Funnel，重启不变）。GitHub Pages 前端用它连接家里电脑。
-const REMOTE_API_BASE = 'https://tech-taylor.taila3ecd9.ts.net';
+// 注意：路径拼接是 `${base}${path}`，因此 base 需要包含 /api 前缀。
+const REMOTE_API_BASE = 'https://tech-taylor.taila3ecd9.ts.net/api';
 
 // API Base URL — 可配置（localStorage 覆盖 > 按部署位置自动判断）
 let API_BASE = detectDefaultBase();
