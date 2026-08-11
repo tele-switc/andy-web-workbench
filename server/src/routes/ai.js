@@ -1,12 +1,37 @@
 import { Router } from 'express';
 import * as db from '../db/index.js';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 
+// ai.js 在 server/src/ 下，.env 在 server/.env，手动读取以保证可靠性
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function loadEnvFromFile(envPath) {
+  try {
+    const raw = fs.readFileSync(envPath, 'utf8');
+    const vars = {};
+    for (const line of raw.split(/\r?\n/)) {
+      const i = line.indexOf('=');
+      if (i < 1) continue;
+      const k = line.slice(0, i).trim();
+      if (!k || k.startsWith('#')) continue;
+      vars[k] = line.slice(i + 1).trim().replace(/^["']|["']$/g, '');
+    }
+    return vars;
+  } catch { return {}; }
+}
+
+const envPath = path.resolve(__dirname, '..', '..', '.env');
+const fileVars = loadEnvFromFile(envPath);
+
+const AI_API_KEY = process.env.AI_API_KEY || fileVars.AI_API_KEY || '';
+const AI_API_BASE = process.env.AI_API_BASE || fileVars.AI_API_BASE || 'https://api.agnes-ai.com/api/v1';
+const AI_MODEL = process.env.AI_MODEL || fileVars.AI_MODEL || 'gpt-4o';
+
+// Module-level AI API config (AI_API_KEY / AI_API_BASE / AI_MODEL loaded above)
 const router = Router();
-
-// Module-level AI API config
-const AI_API_KEY = process.env.AI_API_KEY || '';
-const AI_API_BASE = process.env.AI_API_BASE || 'https://api.agnes-ai.com/api/v1';
-const AI_MODEL = process.env.AI_MODEL || 'gpt-4o';
 
 // Cache the last AI connectivity status (checked on demand)
 let aiStatusCache = { checked: 0, status: 'unknown', detail: '' };

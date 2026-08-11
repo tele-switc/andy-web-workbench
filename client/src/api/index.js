@@ -358,7 +358,38 @@ export async function getLogs(limit = 50) {
   return apiFetch(`/logs?limit=${limit}`);
 }
 
-// ---- WebSocket ----
+// ---- Analyst Learning System ----
+export async function getAnalystStatus() {
+  return apiFetch('/analyst/status');
+}
+export async function getAnalystLearned() {
+  return apiFetch('/analyst/learned');
+}
+export async function getAnalystQuestions() {
+  return apiFetch('/analyst/questions');
+}
+export async function postObservation(category, studentId, detail) {
+  return apiFetch('/analyst/observe', { method: 'POST', body: JSON.stringify({ category, studentId, detail }) });
+}
+export async function postAnswer(questionId, answer) {
+  return apiFetch('/analyst/answer', { method: 'POST', body: JSON.stringify({ questionId, answer }) });
+}
+export async function skipQuestion(questionId) {
+  return apiFetch('/analyst/answer', { method: 'POST', body: JSON.stringify({ questionId, skip: true }) });
+}
+export async function dismissQuestion(questionId) {
+  return apiFetch('/analyst/answer', { method: 'POST', body: JSON.stringify({ questionId, dismiss: true }) });
+}
+export async function postCorrect(targetType, targetId, correction) {
+  return apiFetch('/analyst/correct', { method: 'POST', body: JSON.stringify({ targetType, targetId, correction }) });
+}
+export async function postReflect(force) {
+  return apiFetch('/analyst/reflect', { method: 'POST', body: JSON.stringify({ force }) });
+}
+
+// ---- WebSocket connected state ----
+let wsConnected = false;
+export function getWsConnected() { return wsConnected; }
 export function connectWebSocket(handlers = {}) {
   messageHandlers.push(handlers);
   if (ws) return;
@@ -377,6 +408,7 @@ export function connectWebSocket(handlers = {}) {
       ws.onopen = () => {
         console.log('[WS] 已连接');
         wsRetry = 0;
+        wsConnected = true;
         setHostOnline(true);
         if (handlers.onStatus) handlers.onStatus(true);
         ws.send(JSON.stringify({ type: 'sync_request' }));
@@ -397,6 +429,7 @@ export function connectWebSocket(handlers = {}) {
 
       ws.onclose = () => {
         console.log('[WS] 连接断开');
+        wsConnected = false;
         // WS 断开不视为主机离线（HTTP 健康检查才决定主机状态），避免 WS 偶发失败误报
         if (handlers.onStatus) handlers.onStatus(false);
         ws = null;

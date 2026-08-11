@@ -1,11 +1,12 @@
 <#
 .SYNOPSIS
-  Funnel 看门狗 — 保证 Tailscale Funnel 持续对外提供服务（Tailscale 方案，替代原 cloudflared）
-  由 start-workbench.ps1 启动。每 30 秒检查一次：
-    1. Tailscale 是否在线（未登录/未启动则提示）
-    2. Funnel 是否已配置到 localhost:3000（缺失则重新配置 --bg）
+  Funnel + Tailscale 看门狗 — 保证 Tailscale 在线且 Funnel 持续对外服务
+  由 start-workbench.ps1 启动。每 20 秒检查：
+    1. Tailscale 是否已登录且在线（NoState/离线则尝试重连、重认证）
+    2. Funnel 是否已配置到 localhost:3000（缺失则 --bg 重建）
     3. 后端 health 是否正常（异常交给 server-watchdog 恢复，这里只记录）
-  同时把稳定公网地址写入 logs/public-url.txt，供前后端读取。
+  网络断开/休眠唤醒/Wi-Fi切换后，本循环会自动重连与恢复。
+  稳定公网地址写入 logs/public-url.txt。
 #>
 $ErrorActionPreference = 'SilentlyContinue'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -16,44 +17,51 @@ $UrlFile = Join-Path $LogsDir 'public-url.txt'
 $StatusFile = Join-Path $LogsDir 'tailscale-status.json'
 $TsExe = 'C:\Program Files\Tailscale\tailscale.exe'
 $HealthUrl = 'http://localhost:3000/api/health'
+$SetupScript = Join-Path $ProjectRoot 'scripts\tailscale-setup.ps1'
 
 function Write-Log($msg) {
     $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $msg"
     Add-Content -Path $LogFile -Value $line -Encoding utf8
 }
 
-function Get-PublicUrl {
+function Get-TsState {
     try {
         $j = & $TsExe status --json 2>$null | ConvertFrom-Json
-        if ($j.Self.DNSName) {
-            $url = "https://$($j.Self.DNSName.TrimEnd('.'))"
-            return $url
-        }
-    } catch {}
+        return $j
+    } catch { return $null }
+}
+
+function Get-PublicUrl {
+    $j = Get-TsState
+    if ($j -and $j.Self -and $j.Self.DNSName) {
+        return "https://$($j.Self.DNSName.TrimEnd('.'))"
+    }
     return $null
 }
 
-function Ensure-Funnel {
-    # 1) 确认在线
-    try {
-        $j = & $TsExe status --json 2>$null | ConvertFrom-Json
-        if (-not $j.Self.Online) {
-            Write-Log '[WARN] Tailscale 未在线（可能是未登录）。请运行 scripts/tailscale-setup.ps1 完成登录。'
-            return $false
-        }
-    } catch {
-        Write-Log '[WARN] tailscale 命令不可用，请确认已安装 Tailscale。'
-        return $false
-    }
-
-    # 2) 确认 Funnel 已配置
-    $fs = (& $TsExe funnel status 2>&1 | Out-String)
-    if ($fs -match 'Funnel on') {
+function Ensure-Tailscale {
+    $j = Get-TsState
+    if ($j -and $j.Self -and $j.Self.Online) { return $true }
+    # 未登录或 NoState：尝试重连 / 重认证（浏览器已登录过则自动通过）
+    Write-Log 'Tailscale 未在线，尝试重连...'
+    $out = (& $TsExe up --reset --timeout=40s 2>&1 | Out-String)
+    Start-Sleep -Seconds 5
+    $j2 = Get-TsState
+    if ($j2 -and $j2.Self -and $j2.Self.Online) {
+        Write-Log 'Tailscale 已恢复在线'
         return $true
     }
+    Write-Log "[WARN] Tailscale 仍离线（可能控制平面被网络屏蔽）。$($out.Trim())"
+    return $false
+}
+
+function Ensure-Funnel {
+    if (-not (Ensure-Tailscale)) { return $false }
+    $fs = (& $TsExe funnel status 2>&1 | Out-String)
+    if ($fs -match 'Funnel on') { return $true }
     Write-Log 'Funnel 未配置，正在启用...'
     $out = (& $TsExe funnel --bg --yes 3000 2>&1 | Out-String)
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds 3
     $fs2 = (& $TsExe funnel status 2>&1 | Out-String)
     if ($fs2 -match 'Funnel on') {
         Write-Log 'Funnel 已启用 ✓'
@@ -84,18 +92,14 @@ while ($true) {
             if ($h.data.status -eq 'ok') { $serverOk = $true }
         } catch {}
 
-        # Funnel 保活
+        # Tailscale + Funnel 保活
         $ok = Ensure-Funnel
 
-        if ($ok -and $serverOk -and $url) {
-            Write-Log "OK 公网=$url 后端=正常"
-        } elseif ($ok -and -not $serverOk) {
-            Write-Log 'OK Funnel=正常 后端=未就绪(等待 server-watchdog 恢复)'
-        } elseif (-not $ok) {
-            Write-Log 'WARN Funnel=异常'
-        }
+        if ($ok -and $serverOk -and $url) { Write-Log "OK 公网=$url 后端=正常" }
+        elseif ($ok -and -not $serverOk) { Write-Log 'OK Funnel=正常 后端=未就绪(等待 server-watchdog)' }
+        elseif (-not $ok) { Write-Log 'WARN Tailscale/Funnel=异常' }
     } catch {
         Write-Log "ERROR $($_.Exception.Message)"
     }
-    Start-Sleep -Seconds 30
+    Start-Sleep -Seconds 20
 }

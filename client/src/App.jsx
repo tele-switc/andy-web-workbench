@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import * as api from './api';
 import * as idb from './db/indexeddb';
+import { deriveState, DIAG_STATES } from './lib/diagnostics';
 
 // Pages
 import Home from './pages/Home';
@@ -11,7 +12,10 @@ import LeadDetail from './pages/LeadDetail';
 import Reminders from './pages/Reminders';
 import Archives from './pages/Archives';
 import More from './pages/More';
+import AnalystLearned from './pages/AnalystLearned';
 import AiPanel from './components/AiPanel';
+import AiCore, { AiCoreDrawer } from './components/AiCore';
+import ParticleField from './components/ParticleField';
 import Toast from './components/Toast';
 
 const ICONS = {
@@ -20,13 +24,6 @@ const ICONS = {
   leads: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 11a4 4 0 11-8 0 4 4 0 018 0z"/><path d="M3 20a6 6 0 0112 0v1H3v-1z"/><path d="M19 6v4M21 8h-4"/></svg>,
   reminders: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="9"/></svg>,
   more: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>,
-};
-
-const STATUS_TEXT = {
-  connected: '已同步',
-  syncing: '同步中',
-  offline: '离线',
-  'host-offline': '主机离线',
 };
 
 export default function App() {
@@ -42,6 +39,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loggedIn, setLoggedIn] = useState(() => api.isLoggedIn());
   const [showLogin, setShowLogin] = useState(!api.isLoggedIn());
+  const [aiCoreOpen, setAiCoreOpen] = useState(false);
+  const [analystStatus, setAnalystStatus] = useState(null);
+  const [analystQuestions, setAnalystQuestions] = useState([]);
+  const [analystHypotheses, setAnalystHypotheses] = useState([]);
   const toastId = useRef(0);
 
   // Toast handler
@@ -127,6 +128,21 @@ export default function App() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // 加载分析师系统数据（AI Core 展示用）
+  useEffect(() => {
+    if (!loggedIn) return;
+    let cancelled = false;
+    Promise.all([api.getAnalystStatus(), api.getAnalystQuestions(), api.getAnalystLearned()])
+      .then(([st, qs, learned]) => {
+        if (cancelled) return;
+        setAnalystStatus(st);
+        setAnalystQuestions((qs || []).filter(x => x.status === 'pending'));
+        setAnalystHypotheses((learned?.hypotheses || []).filter(h => h.status !== 'refuted').slice(0, 3));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [loggedIn]);
+
   // WebSocket
   useEffect(() => {
     const unsub = api.connectWebSocket({
@@ -147,6 +163,11 @@ export default function App() {
     setView(v);
     setParams(p);
     window.scrollTo(0, 0);
+    // 分析师观察：查看学员/意向详情
+    if (p && p.id) {
+      if (v === 'studentDetail') api.postObservation('view_student', p.id, {}).catch(() => {});
+      if (v === 'leadDetail') api.postObservation('view_lead', p.id, {}).catch(() => {});
+    }
   }, []);
 
   const refreshData = useCallback(async () => {
@@ -155,8 +176,11 @@ export default function App() {
     setSyncStatus(api.getHostOnline() ? 'connected' : 'offline');
   }, [loadData]);
 
-  // Derived connection status
-  const status = !netOnline ? 'offline' : !hostOnline ? 'host-offline' : syncStatus === 'syncing' ? 'syncing' : 'connected';
+  // Derived connection status using diagnostic state machine
+  const diagState = deriveState(netOnline, hostOnline, api.getWsConnected(), syncStatus === 'syncing');
+  const status = diagState.key;
+  const statusLabel = diagState.label;
+  const statusFriendly = diagState.friendly;
 
   const tabs = [
     { key: 'home', label: '首页', icon: ICONS.home },
@@ -184,30 +208,30 @@ export default function App() {
               <div className="header-actions">
                 <span className={`status-pill ${status}`}>
                   <span className="dot" />
-                  {STATUS_TEXT[status] || '连接中'}
+                  {statusLabel}
                 </span>
               </div>
             </div>
           </header>
 
-          {(status === 'host-offline' || status === 'offline' || status === 'syncing') && (
+          {(status === 'host_unreachable' || status === 'internet_offline' || status === 'host_down' || status === 'syncing') && (
             <div className={`banner ${status}`}>
-              {status === 'host-offline' && (
+              {status === 'host_unreachable' && (
                 <>
                   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1l22 22M16.7 16.7A11 11 0 0012 3a11 11 0 00-6.3 2M12 21a2 2 0 100-4 2 2 0 000 4z"/><path d="M8 11a4 4 0 014-4M4 14a8 8 0 004.5-2.5"/></svg>
-                  <span>主机当前离线，操作会暂存在本机，主机恢复在线后自动同步。</span>
+                  <span>{statusFriendly}</span>
                 </>
               )}
-              {status === 'offline' && (
+              {status === 'internet_offline' && (
                 <>
                   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.55a11 11 0 015.08-2.56M8.53 16.11a6 6 0 016.95 0M12 20h.01"/><path d="M1 4l22 22"/></svg>
-                  <span>当前网络已断开，操作会暂存在本机，联网后自动同步。</span>
+                  <span>{statusFriendly}</span>
                 </>
               )}
               {status === 'syncing' && (
                 <>
                   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6"/></svg>
-                  <span>正在与主机同步…</span>
+                  <span>{statusFriendly}</span>
                 </>
               )}
             </div>
@@ -232,6 +256,8 @@ export default function App() {
               <Archives data={data} navigate={navigate} />
             ) : view === 'more' ? (
               <More data={data} navigate={navigate} onOpenAi={() => setAiOpen(true)} />
+            ) : view === 'analystLearned' ? (
+              <AnalystLearned navigate={navigate} />
             ) : null}
           </div>
 
@@ -258,12 +284,27 @@ export default function App() {
             </nav>
           )}
 
-          {!aiOpen && (
-            <button className="fab" onClick={() => setAiOpen(true)} aria-label="AI 助手">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1.27A7.05 7.05 0 0113 22h-2a7.05 7.05 0 01-6.73-4H3a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2z"/>
-              </svg>
-            </button>
+          {view === 'home' && (
+            <ParticleField state="idle" interactive={true} density="normal" />
+          )}
+
+          {!aiOpen && !aiCoreOpen && (
+            <AiCore
+              state="idle"
+              onClick={() => setAiCoreOpen(true)}
+              suggestion="小K · AI 助手"
+            />
+          )}
+
+          {aiCoreOpen && (
+            <AiCoreDrawer
+              open={aiCoreOpen}
+              onClose={() => setAiCoreOpen(false)}
+              recentQuestions={analystQuestions}
+              hypotheses={analystHypotheses}
+              status={analystStatus}
+              onOpenChat={() => { setAiCoreOpen(false); setAiOpen(true); }}
+            />
           )}
 
           {aiOpen && <AiPanel onClose={() => setAiOpen(false)} data={data} />}

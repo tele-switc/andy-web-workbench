@@ -4,6 +4,12 @@ import { broadcastChange } from '../ws/index.js';
 
 const router = Router();
 
+function observe(category, studentId, detail) {
+  try {
+    db.createObservation({ studentId: studentId || '', category, source: 'students', detail: JSON.stringify(detail || {}) });
+  } catch {}
+}
+
 // GET /api/students — list all
 router.get('/', (req, res) => {
   const list = db.getAllStudents();
@@ -59,6 +65,7 @@ router.put('/:id', (req, res) => {
   const student = db.updateStudent(req.params.id, req.body);
   db.logOperation('update', 'student', req.params.id, { name: req.body.name });
   broadcastChange('student', 'update', student);
+  observe('student_updated', req.params.id, { fields: Object.keys(req.body), notes: req.body.notes?.slice(0, 200) });
   res.json({ success: true, data: student });
 });
 

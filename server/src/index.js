@@ -1,10 +1,15 @@
 import 'dotenv/config';
+import { config } from 'dotenv';
+import path from 'path';
+// 加载 server/.env（因为 watchdog 的 cwd 是项目根目录）
+config({ path: path.resolve(process.cwd(), 'server', '.env') });
+
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
-import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 import * as db from './db/index.js';
@@ -15,6 +20,7 @@ import leadsRouter from './routes/leads.js';
 import recordsRouter from './routes/records.js';
 import remindersRouter from './routes/reminders.js';
 import aiRouter from './routes/ai.js';
+import analystRouter from './routes/analyst.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -36,6 +42,54 @@ function getPublicUrl() {
     }
   } catch {}
   return process.env.PUBLIC_URL || '';
+}
+
+// Host-side diagnostic: gathers Tailscale/Funnel/Node state.
+// Note: /api/diag is only reached through the funnel, so tailscale+funnel are
+// necessarily up when this is called; we still report granular numbers.
+function diagnoseHost() {
+  const tsExe = 'C:\\Program Files\\Tailscale\\tailscale.exe';
+  const run = (args) => {
+    try {
+      return execFileSync(tsExe, args, { timeout: 4000, encoding: 'utf8' });
+    } catch (e) {
+      return null;
+    }
+  };
+  let tailscale = { online: false, backendState: 'unknown' };
+  try {
+    const raw = run(['status', '--json']);
+    if (raw) {
+      const j = JSON.parse(raw);
+      tailscale = {
+        online: !!(j.Self && j.Self.Online),
+        backendState: j.BackendState || 'unknown',
+        dns: j.Self ? j.Self.DNSName : null,
+        ip: j.Self ? j.Self.TailscaleIPs : [],
+      };
+    }
+  } catch {}
+
+  let funnel = { on: false, config: null };
+  try {
+    const raw = run(['funnel', 'status', '--json']);
+    if (raw) {
+      const j = JSON.parse(raw);
+      const host = getPublicUrl().replace('https://', '');
+      funnel.on = !!(j.AllowFunnel && j.AllowFunnel[`${host}:443`]);
+      funnel.config = j;
+    }
+  } catch {}
+
+  return {
+    host: getPublicUrl(),
+    node: { up: true, pid: process.pid, uptimeSec: Math.round(process.uptime()) },
+    sqlite: { up: true, students: db.getAllStudents().length, leads: db.getAllLeads().length, records: db.getAllRecords().length },
+    ws: { connectedClients: getConnectedCount() },
+    tailscale,
+    funnel,
+    time: new Date().toISOString(),
+  };
 }
 
 // Middleware
@@ -95,11 +149,17 @@ app.use('/api/leads', leadsRouter);
 app.use('/api/records', recordsRouter);
 app.use('/api/reminders', remindersRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api/analyst', analystRouter);
 
 // Operation log
 app.get('/api/logs', (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   res.json({ success: true, data: db.getRecentLogs(limit) });
+});
+
+// Host-side connection diagnostic (only reachable when the funnel is up)
+app.get('/api/diag', (req, res) => {
+  res.json({ success: true, data: diagnoseHost() });
 });
 
 // Serve static frontend (production build)

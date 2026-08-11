@@ -113,6 +113,8 @@ export default function AiPanel({ onClose, data }) {
       text: `帮我处理：${sug.title}`,
       time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     }]);
+    // 分析师观察：接受了 AI 建议
+    api.postObservation('accept_ai', sug.relatedId || '', { title: sug.title }).catch(() => {});
 
     setLoading(true);
     try {

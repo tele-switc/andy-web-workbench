@@ -4,6 +4,13 @@ import { broadcastChange } from '../ws/index.js';
 
 const router = Router();
 
+// 记录观察（分析师系统）
+function observe(category, studentId, detail) {
+  try {
+    db.createObservation({ studentId: studentId || '', category, source: 'records', detail: JSON.stringify(detail || {}) });
+  } catch {}
+}
+
 router.get('/', (req, res) => {
   const { studentId } = req.query;
   const list = db.getAllRecords(studentId || null);
@@ -43,6 +50,13 @@ router.post('/', (req, res) => {
   const result = { success: true, data: record };
   if (operation_id) db.saveIdempotency(operation_id, result);
   broadcastChange('record', 'create', record);
+  // 观察：记录回访（教师建议、孩子进步、下期计划 → 规划决策 + 结果）
+  observe('record_created', studentId, { reminderTitle: data.reminderTitle, hasAdvice: !!data.teacherAdvice, hasProgress: !!data.childProgress, hasNextPlan: !!data.nextPlan });
+  if (data.teacherAdvice || data.nextPlan) {
+    observe('record_advice', studentId, { advice: data.teacherAdvice?.slice(0, 200), nextPlan: data.nextPlan?.slice(0, 200) });
+  }
+  if (data.childProgress) observe('record_progress', studentId, { progress: data.childProgress.slice(0, 200) });
+  if (data.childProblems) observe('record_problem', studentId, { problem: data.childProblems.slice(0, 200) });
   res.status(201).json(result);
 });
 

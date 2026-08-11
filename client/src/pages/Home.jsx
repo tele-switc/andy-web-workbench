@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as api from '../api';
+import AnimatedNumber from '../components/AnimatedNumber';
 import { calcAllDue, calcStudentDueCount, calcLeadDueCount, todayStr, fmtMD } from '../lib/reminders';
 
 function greeting() {
@@ -54,17 +55,34 @@ export default function Home({ data, navigate, status, loading }) {
 
   return (
     <div>
-      <div className="greeting">
-        <div className="hi">{greeting()}，今天要回访 {dueAll.length} 人</div>
-        <div className="sub">{overdue.length > 0 ? `有 ${overdue.length} 项已逾期，记得优先处理` : '今天也没有遗漏，继续保持'}</div>
+      {/* 动态欢迎层 */}
+      <div className="greeting-card">
+        <div className="greeting-date">{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })}</div>
+        <div className="greeting-main-txt">{greeting()}，今天要回访 <AnimatedNumber target={dueAll.length} className="anim-number" /> 人</div>
+        <div className="sub" style={{ marginTop: 4, color: 'var(--text-2)', fontSize: 13 }}>
+          {overdue.length > 0 ? `有 ${overdue.length} 项已逾期，记得优先处理` : '今天也没有遗漏，继续保持'}
+        </div>
+        <div className="greeting-ai-status">
+          <div className="ai-center" data-state={status}>
+            <div className="ai-orb" />
+            <div className="ai-core-center" />
+          </div>
+          <span className="greeting-ai-label">
+            {status === 'connected' || status === 'all_ok'
+              ? '小K 正在观察：需要关注 ' + focusStudents.length + ' 位学员，' + leadFollow.length + ' 位家长待跟进'
+              : status === 'syncing' ? '正在同步…'
+              : status === 'host_unreachable' ? '主机暂不可达，已进入离线模式'
+              : '小K 在线观察中'}
+          </span>
+        </div>
       </div>
 
       {/* 今日概览 */}
       <div className="overview">
-        <div className="overview-item"><div className="num sage">{dueToday.length}</div><div className="lab">今日待办</div></div>
-        <div className="overview-item"><div className="num rose">{overdue.length}</div><div className="lab">已逾期</div></div>
-        <div className="overview-item"><div className="num slate">{students.length}</div><div className="lab">正式学员</div></div>
-        <div className="overview-item"><div className="num slate">{leads.length}</div><div className="lab">意向学员</div></div>
+        <div className="overview-item"><div className="num sage"><AnimatedNumber target={dueToday.length} /></div><div className="lab">今日待办</div></div>
+        <div className="overview-item"><div className="num rose"><AnimatedNumber target={overdue.length} /></div><div className="lab">已逾期</div></div>
+        <div className="overview-item"><div className="num slate"><AnimatedNumber target={students.length} /></div><div className="lab">正式学员</div></div>
+        <div className="overview-item"><div className="num slate"><AnimatedNumber target={leads.length} /></div><div className="lab">意向学员</div></div>
       </div>
 
       {/* AI 建议 */}

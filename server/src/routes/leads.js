@@ -4,6 +4,12 @@ import { broadcastChange } from '../ws/index.js';
 
 const router = Router();
 
+function observe(category, leadId, detail) {
+  try {
+    db.createObservation({ studentId: leadId || '', category, source: 'leads', detail: JSON.stringify(detail || {}) });
+  } catch {}
+}
+
 router.get('/', (req, res) => {
   const list = db.getAllLeads();
   res.json({ success: true, data: list });
