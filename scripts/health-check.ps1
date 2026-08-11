@@ -43,9 +43,14 @@ function IsProjectPwsh($cmdline) {
 
 function Get-ProjectPwshProcs($which) {
     # $which: 'server-watchdog' / 'funnel-watchdog'
+    # 精确匹配：进程命令行以 -File xxx\<which>.ps1 结尾（排除 health-check 本身误匹配）
     $kw = [regex]::Escape($which + '.ps1')
     return Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -match $kw }
+        Where-Object {
+            ($_.CommandLine -match $kw) -and
+            ($_.CommandLine -notmatch 'health-check\.ps1') -and
+            ($_.ProcessId -ne $PID)
+        }
 }
 
 # 去重：保留最新实例，终止多余的旧实例（仅本项目脚本，精确路径验证过）
