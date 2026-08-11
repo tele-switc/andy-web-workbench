@@ -56,12 +56,7 @@ if ($InstallService) {
 
 Write-Host "Andy 工作台启动中..." -ForegroundColor Cyan
 
-# 0) 先确保 Tailscale 在线 + Funnel 已配置（脚本会自动登录/启用，若已就绪立即返回）
-try {
-    & "$ProjectRoot\scripts\tailscale-setup.ps1" | Out-Null
-} catch { }
-
-# 1) 后端服务看门狗（自动重启 Node 服务）
+# 0) 后端服务看门狗（自动重启 Node 服务）——先起后端，不阻塞
 $serverProc = Start-Process -FilePath "C:\Program Files\PowerShell\7\pwsh.exe" `
     -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "$ProjectRoot\scripts\server-watchdog.ps1" `
     -WindowStyle Hidden -PassThru
@@ -69,13 +64,27 @@ Write-Host "[OK] 后端服务启动中 (PID: $($serverProc.Id))" -ForegroundColo
 
 Start-Sleep -Seconds 4
 
-# 2) Funnel 看门狗（保活 + 健康检查 + 固定公网地址）
+# 1) Funnel 看门狗（保活 + 健康检查 + 固定公网地址）
 $tunnelProc = Start-Process -FilePath "C:\Program Files\PowerShell\7\pwsh.exe" `
     -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "$ProjectRoot\scripts\funnel-watchdog.ps1" `
     -WindowStyle Hidden -PassThru
 Write-Host "[OK] Funnel 公网服务启动中 (PID: $($tunnelProc.Id))" -ForegroundColor Green
 
-# 3) 等待就绪并验证
+# 2) 健康巡检（每5分钟，自动修复；启动即先跑一轮修复 Tailscale/Funnel，不阻塞本脚本）
+$healthProc = Start-Process -FilePath "C:\Program Files\PowerShell\7\pwsh.exe" `
+    -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "$ProjectRoot\scripts\health-check.ps1" `
+    -WindowStyle Hidden -PassThru
+Write-Host "[OK] 健康巡检启动中 (PID: $($healthProc.Id), 每5分钟)" -ForegroundColor Green
+
+# 3) Tailscale 重连/登录放后台（由 health-check 循环处理），不再同步阻塞
+try {
+    $tsSetup = Start-Process -FilePath "C:\Program Files\PowerShell\7\pwsh.exe" `
+        -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "$ProjectRoot\scripts\tailscale-setup.ps1" `
+        -WindowStyle Hidden -PassThru
+    Write-Host "[OK] Tailscale 重连已在后台处理 (PID: $($tsSetup.Id))" -ForegroundColor Green
+} catch { }
+
+# 4) 等待就绪并验证
 Start-Sleep -Seconds 12
 $publicUrl = Get-Content "$LogsDir\public-url.txt" -ErrorAction SilentlyContinue
 
