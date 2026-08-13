@@ -25,7 +25,7 @@ import analystRouter from './routes/analyst.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 3001);
 const app = express();
 const server = http.createServer(app);
 

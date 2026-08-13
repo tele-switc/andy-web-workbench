@@ -2,7 +2,7 @@
 .SYNOPSIS
   Andy 工作台 — 健康巡检 + 自动修复
   每 5 分钟检查一次：
-    1. Node 后端 (localhost:3000 /api/health)
+    1. Node 后端 (localhost:3001 /api/health)
     2. Tailscale 是否在线
     3. Funnel 是否配置
     4. server-watchdog / funnel-watchdog 是否存活
@@ -22,7 +22,7 @@ if (-not (Test-Path $LogsDir)) { New-Item -ItemType Directory -Path $LogsDir -Fo
 $LogFile = Join-Path $LogsDir 'health-check.log'
 $StateFile = Join-Path $LogsDir 'watchdog-pids.json'   # 记录本项目看门狗 PID（仅用于避免重复，使用前会再次验证）
 $Pwsh = 'C:\Program Files\PowerShell\7\pwsh.exe'
-$HealthUrl = 'http://127.0.0.1:3000/api/health'
+$HealthUrl = 'http://127.0.0.1:3001/api/health'
 $TsExe = 'C:\Program Files\Tailscale\tailscale.exe'
 $ServerWatchdog = Join-Path $ProjectRoot 'scripts\server-watchdog.ps1'
 $FunnelWatchdog = Join-Path $ProjectRoot 'scripts\funnel-watchdog.ps1'
@@ -170,8 +170,8 @@ function Run-Check {
     if (-not (Test-Funnel)) {
         Log "WARN Funnel 未配置"
         try {
-            & $TsExe funnel --bg --yes 3000 2>&1 | Out-Null
-            Log "FIX 重建 Funnel (--bg 3000)"
+            & $TsExe funnel --bg --yes 3001 2>&1 | Out-Null
+            Log "FIX 重建 Funnel (--bg 3001)"
             $fixed += 'funnel'
         } catch {}
     } else {

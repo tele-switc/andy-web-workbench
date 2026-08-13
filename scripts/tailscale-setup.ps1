@@ -2,7 +2,7 @@
 .SYNOPSIS
   Andy 工作台 — Tailscale Funnel 一键安装与配置（需管理员权限）
   由 start-workbench.ps1 / 用户手动以管理员运行。
-  流程: 安装 Tailscale → 登录(浏览器) → 启用 Funnel 暴露 localhost:3000
+  流程: 安装 Tailscale → 登录(浏览器) → 启用 Funnel 暴露 localhost:3001
         → 把固定公网地址写入 logs/public-url.txt
 #>
 param(
@@ -77,9 +77,9 @@ if ($who -and $who.Self -and $who.Self.Online) {
 }
 
 # ---- 3. 启用 Funnel（公开 HTTPS） ----
-Write-Host "[3/4] 配置 Funnel 暴露端口 3000 ..."
+Write-Host "[3/4] 配置 Funnel 暴露端口 3001 ..."
 # Funnel 需要先确保 tailnet 允许（个人免费计划默认支持）。若失败会给出提示。
-& $TsExe funnel 3000 2>&1 | ForEach-Object { Write-Host "      $_" }
+& $TsExe funnel 3001 2>&1 | ForEach-Object { Write-Host "      $_" }
 
 Start-Sleep -Seconds 2
 $fs = & $TsExe funnel status 2>$null

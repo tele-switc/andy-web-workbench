@@ -8,8 +8,8 @@ $ErrorActionPreference = "SilentlyContinue"
 
 Write-Host "正在停止 Andy 工作台..." -ForegroundColor Yellow
 
-# 停止 Node 后端进程 (监听 3000 端口)
-$conn = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
+# 停止 Node 后端进程 (监听 3001 端口)
+$conn = Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue
 if ($conn) {
     $pids = $conn | Select-Object -ExpandProperty OwningProcess -Unique
     foreach ($pid in $pids) {

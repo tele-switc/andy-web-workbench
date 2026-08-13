@@ -89,7 +89,7 @@ Start-Sleep -Seconds 12
 $publicUrl = Get-Content "$LogsDir\public-url.txt" -ErrorAction SilentlyContinue
 
 try {
-    $health = Invoke-RestMethod -Uri "http://localhost:3000/api/health" -TimeoutSec 5 -UseBasicParsing
+    $health = Invoke-RestMethod -Uri "http://localhost:3001/api/health" -TimeoutSec 5 -UseBasicParsing
     Write-Host "[OK] 服务就绪: $($health.data.students) 学员, $($health.data.leads) 意向" -ForegroundColor Green
     if ($publicUrl) {
         try {
@@ -99,9 +99,9 @@ try {
             Write-Host "[WARN] 公网地址待验证（Funnel 可能还在启动）: $publicUrl" -ForegroundColor Yellow
         }
     }
-    Write-Host "[OK] 本机访问: http://localhost:3000" -ForegroundColor Cyan
+    Write-Host "[OK] 本机访问: http://localhost:3001" -ForegroundColor Cyan
     if ($publicUrl) { Write-Host "[OK] 固定公网地址: $publicUrl" -ForegroundColor Green }
 } catch {
-    Write-Host "[WARN] 服务可能尚未就绪，稍后访问 http://localhost:3000" -ForegroundColor Yellow
+    Write-Host "[WARN] 服务可能尚未就绪，稍后访问 http://localhost:3001" -ForegroundColor Yellow
 }
 Write-Host "[OK] 日志路径: $LogsDir" -ForegroundColor Gray

@@ -45,7 +45,7 @@ Write-Host "[1/4] 检查 Tailscale Funnel..."
 try {
     $ts = 'C:\Program Files\Tailscale\tailscale.exe'
     if (Test-Path $ts) {
-        & $ts funnel --bg --yes 3000 2>&1 | Out-Null
+        & $ts funnel --bg --yes 3001 2>&1 | Out-Null
         Log "funnel --bg ensured"
         Write-Host "      Funnel --bg 已确认/重建" -ForegroundColor Green
     }

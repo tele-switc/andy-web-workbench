@@ -57,7 +57,7 @@ if (-not $SkipClashConfig) {
 `$ErrorActionPreference='Stop'
 `$pipe='verge-mihomo'
 `$client = New-Object System.IO.Pipes.NamedPipeClientStream('.', `$pipe, [System.IO.Pipes.PipeDirection]::InOut, [System.IO.Pipes.PipeOptions]::None)
-`$client.Connect(3000)
+`$client.Connect(3001)
 `$writer = New-Object System.IO.StreamWriter(`$client); `$writer.AutoFlush=`$true
 `$reader = New-Object System.IO.StreamReader(`$client)
 `$writer.Write("POST /restart HTTP/1.1`r`nHost: localhost`r`nContent-Length: 0`r`nConnection: close`r`n`r`n")
@@ -87,7 +87,7 @@ Log "Tailscale: Backend=$($j.BackendState) Online=$online DNS=$($j.Self.DNSName)
 
 if ($online) {
     # 重建 Funnel
-    & $ts funnel --bg --yes 3000 2>&1 | Out-Null
+    & $ts funnel --bg --yes 3001 2>&1 | Out-Null
     Start-Sleep -Seconds 4
     $fs = & $ts funnel status 2>&1 | Out-String
     $funnelOn = $fs -match 'Funnel on'

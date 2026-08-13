@@ -14,7 +14,7 @@ Write-Host ""
 
 # 1. 后端服务
 try {
-    $health = Invoke-RestMethod -Uri "http://localhost:3000/api/health" -TimeoutSec 5
+    $health = Invoke-RestMethod -Uri "http://localhost:3001/api/health" -TimeoutSec 5
     Write-Host "  [后端]  ✅ 运行中" -ForegroundColor Green
     $d = $health.data
     Write-Host "         ├─ 学员: $($d.students)"
@@ -77,6 +77,6 @@ if ($logFiles) {
 }
 
 Write-Host ""
-Write-Host "本机访问: http://localhost:3000" -ForegroundColor Cyan
+Write-Host "本机访问: http://localhost:3001" -ForegroundColor Cyan
 if ($publicUrl) { Write-Host "公网访问: $publicUrl" -ForegroundColor Cyan }
 Write-Host ""

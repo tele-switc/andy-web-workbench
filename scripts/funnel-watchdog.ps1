@@ -3,7 +3,7 @@
   Funnel + Tailscale 看门狗 — 保证 Tailscale 在线且 Funnel 持续对外服务
   由 start-workbench.ps1 启动。每 20 秒检查：
     1. Tailscale 是否已登录且在线（NoState/离线则尝试重连、重认证）
-    2. Funnel 是否已配置到 localhost:3000（缺失则 --bg 重建）
+    2. Funnel 是否已配置到 localhost:3001（缺失则 --bg 重建）
     3. 后端 health 是否正常（异常交给 server-watchdog 恢复，这里只记录）
   网络断开/休眠唤醒/Wi-Fi切换后，本循环会自动重连与恢复。
   稳定公网地址写入 logs/public-url.txt。
@@ -16,7 +16,7 @@ $LogFile = Join-Path $LogsDir 'funnel.log'
 $UrlFile = Join-Path $LogsDir 'public-url.txt'
 $StatusFile = Join-Path $LogsDir 'tailscale-status.json'
 $TsExe = 'C:\Program Files\Tailscale\tailscale.exe'
-$HealthUrl = 'http://localhost:3000/api/health'
+$HealthUrl = 'http://localhost:3001/api/health'
 $SetupScript = Join-Path $ProjectRoot 'scripts\tailscale-setup.ps1'
 
 function Write-Log($msg) {
@@ -60,7 +60,7 @@ function Ensure-Funnel {
     $fs = (& $TsExe funnel status 2>&1 | Out-String)
     if ($fs -match 'Funnel on') { return $true }
     Write-Log 'Funnel 未配置，正在启用...'
-    $out = (& $TsExe funnel --bg --yes 3000 2>&1 | Out-String)
+    $out = (& $TsExe funnel --bg --yes 3001 2>&1 | Out-String)
     Start-Sleep -Seconds 3
     $fs2 = (& $TsExe funnel status 2>&1 | Out-String)
     if ($fs2 -match 'Funnel on') {
