@@ -57,7 +57,7 @@ if (-not $SkipClashConfig) {
 `$ErrorActionPreference='Stop'
 `$pipe='verge-mihomo'
 `$client = New-Object System.IO.Pipes.NamedPipeClientStream('.', `$pipe, [System.IO.Pipes.PipeDirection]::InOut, [System.IO.Pipes.PipeOptions]::None)
-`$client.Connect(3001)
+`$client.Connect(3000)
 `$writer = New-Object System.IO.StreamWriter(`$client); `$writer.AutoFlush=`$true
 `$reader = New-Object System.IO.StreamReader(`$client)
 `$writer.Write("POST /restart HTTP/1.1`r`nHost: localhost`r`nContent-Length: 0`r`nConnection: close`r`n`r`n")
@@ -68,6 +68,22 @@ if (-not $SkipClashConfig) {
     Start-Sleep -Seconds 10
     Log "mihomo 已重启"
 }
+
+# ---------- 1b) 系统代理绕过：让浏览器 ts.net 流量不经过 Clash ----------
+Write-Host "[1b/4] 设置系统代理绕过 ts.net/tailscale.com..."
+try {
+    $reg = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+    $cur = (Get-ItemProperty -Path $reg -ErrorAction Stop).ProxyOverride
+    if ($cur -notmatch 'ts\.net') {
+        $new = $cur.TrimEnd(';') + ';*.ts.net;*.tailscale.com'
+        Set-ItemProperty -Path $reg -Name ProxyOverride -Value $new
+        Log "系统代理绕过已加: *.ts.net;*.tailscale.com"
+        Write-Host "      已加: *.ts.net;*.tailscale.com" -ForegroundColor Green
+    } else {
+        Log "系统代理绕过已存在"
+        Write-Host "      已存在（幂等）" -ForegroundColor Green
+    }
+} catch { Log "代理绕过设置失败: $_"; Write-Host "      设置失败: $_" -ForegroundColor Yellow }
 
 # ---------- 2) 启动 tailscale-ipn (GUI) ----------
 $ipn = "C:\Program Files\Tailscale\tailscale-ipn.exe"
